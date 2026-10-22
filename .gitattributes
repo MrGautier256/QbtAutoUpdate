@@ -1,0 +1,5 @@
+* text=auto
+
+# Test fixtures are real files captured from upstream servers: keep them byte-exact.
+tests/**/Fixtures/** -text
+*.asc -text

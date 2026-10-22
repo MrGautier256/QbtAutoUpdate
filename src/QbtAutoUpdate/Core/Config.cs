@@ -1,0 +1,132 @@
+using System.Text.Json;
+
+namespace QbtAutoUpdate.Core;
+
+public enum UpdateMode
+{
+    /// <summary>Show a notification with "Update now / Later / Skip this version".</summary>
+    Notify,
+    /// <summary>Close, install and restart without asking.</summary>
+    Auto,
+}
+
+/// <summary>Which variant to install: keep the installed one, or force a series (an explicit user choice).</summary>
+public enum VariantSetting
+{
+    Auto,
+    Lt2,
+    Lt12,
+}
+
+public enum NotificationLevel
+{
+    All,
+    Errors,
+    None,
+}
+
+/// <summary>
+/// Machine-wide settings, %ProgramData%\QbtAutoUpdate\config.json (written by setup as admin,
+/// readable by all users). A missing or damaged file yields safe defaults.
+/// </summary>
+public sealed record MachineConfig
+{
+    /// <summary>Master switch for automatic checks (the "on/off" of the settings dialog).</summary>
+    public bool Enabled { get; init; } = true;
+    public UpdateMode Mode { get; init; } = UpdateMode.Notify;
+    public int CheckIntervalHours { get; init; } = 6;
+    public VariantSetting Variant { get; init; } = VariantSetting.Auto;
+    public int MinReleaseAgeHours { get; init; }
+    public bool SkipOnMeteredConnection { get; init; } = true;
+    public int CloseTimeoutSeconds { get; init; } = 120;
+    public bool RestoreDesktopShortcut { get; init; } = true;
+    public bool BackupConfig { get; init; } = true;
+    public bool BackupTorrents { get; init; }
+    public NotificationLevel Notifications { get; init; } = NotificationLevel.All;
+    /// <summary>Never enabled by default: killing qBittorrent can lose resume data (see README).</summary>
+    public bool AllowForceClose { get; init; }
+
+    public static readonly MachineConfig Default = new();
+
+    public static MachineConfig Load(string path, List<string> warnings)
+    {
+        using JsonDocument? document = JsonFields.TryLoad(path, "config.json", warnings);
+        if (document is null)
+            return Default;
+
+        var f = new JsonFields(document.RootElement, "config.json", warnings);
+        return new MachineConfig
+        {
+            Enabled = f.Bool("enabled", Default.Enabled),
+            Mode = f.Choice("mode", Default.Mode, ("notify", UpdateMode.Notify), ("auto", UpdateMode.Auto)),
+            CheckIntervalHours = f.Int("checkIntervalHours", Default.CheckIntervalHours, 1, 168),
+            Variant = f.Choice("variant", Default.Variant, ("auto", VariantSetting.Auto), ("lt2", VariantSetting.Lt2), ("lt12", VariantSetting.Lt12)),
+            MinReleaseAgeHours = f.Int("minReleaseAgeHours", Default.MinReleaseAgeHours, 0, 720),
+            SkipOnMeteredConnection = f.Bool("skipOnMeteredConnection", Default.SkipOnMeteredConnection),
+            CloseTimeoutSeconds = f.Int("closeTimeoutSeconds", Default.CloseTimeoutSeconds, 10, 1800),
+            RestoreDesktopShortcut = f.Bool("restoreDesktopShortcut", Default.RestoreDesktopShortcut),
+            BackupConfig = f.Bool("backupConfig", Default.BackupConfig),
+            BackupTorrents = f.Bool("backupTorrents", Default.BackupTorrents),
+            Notifications = f.Choice("notifications", Default.Notifications, ("all", NotificationLevel.All), ("errors", NotificationLevel.Errors), ("none", NotificationLevel.None)),
+            AllowForceClose = f.Bool("allowForceClose", Default.AllowForceClose),
+        };
+    }
+
+    public void Save(string path) => JsonFiles.WriteAtomically(path, Write);
+
+    public string ToJson() => JsonFiles.ToText(Write);
+
+    private void Write(Utf8JsonWriter w)
+    {
+        w.WriteStartObject();
+        w.WriteBoolean("enabled", Enabled);
+        w.WriteString("mode", Mode == UpdateMode.Auto ? "auto" : "notify");
+        w.WriteNumber("checkIntervalHours", CheckIntervalHours);
+        w.WriteString("variant", Variant switch { VariantSetting.Lt2 => "lt2", VariantSetting.Lt12 => "lt12", _ => "auto" });
+        w.WriteNumber("minReleaseAgeHours", MinReleaseAgeHours);
+        w.WriteBoolean("skipOnMeteredConnection", SkipOnMeteredConnection);
+        w.WriteNumber("closeTimeoutSeconds", CloseTimeoutSeconds);
+        w.WriteBoolean("restoreDesktopShortcut", RestoreDesktopShortcut);
+        w.WriteBoolean("backupConfig", BackupConfig);
+        w.WriteBoolean("backupTorrents", BackupTorrents);
+        w.WriteString("notifications", Notifications switch { NotificationLevel.Errors => "errors", NotificationLevel.None => "none", _ => "all" });
+        w.WriteBoolean("allowForceClose", AllowForceClose);
+        w.WriteEndObject();
+    }
+}
+
+/// <summary>
+/// Per-user choices, %LOCALAPPDATA%\QbtAutoUpdate\user.json. WebUI credentials are added in phase 2
+/// (protected with DPAPI).
+/// </summary>
+public sealed record UserSettings
+{
+    public QbtVersion? SkippedVersion { get; init; }
+    public DateTimeOffset? SnoozeUntil { get; init; }
+
+    public static readonly UserSettings Default = new();
+
+    public static UserSettings Load(string path, List<string> warnings)
+    {
+        using JsonDocument? document = JsonFields.TryLoad(path, "user.json", warnings);
+        if (document is null)
+            return Default;
+
+        var f = new JsonFields(document.RootElement, "user.json", warnings);
+        return new UserSettings
+        {
+            SkippedVersion = f.Version("skippedVersion"),
+            SnoozeUntil = f.Date("snoozeUntil"),
+        };
+    }
+
+    public void Save(string path) => JsonFiles.WriteAtomically(path, w =>
+    {
+        w.WriteStartObject();
+        if (SkippedVersion is { } skipped)
+            w.WriteString("skippedVersion", skipped.ToString());
+        if (SnoozeUntil is { } snooze)
+            w.WriteString("snoozeUntil", JsonFiles.ToIso(snooze));
+        w.WriteEndObject();
+    });
+}

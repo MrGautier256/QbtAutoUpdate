@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QbtAutoUpdate/QbtAutoUpdate.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/QbtAutoUpdate.Tests/QbtAutoUpdate.Tests.csproj" />
+  </Folder>
+</Solution>

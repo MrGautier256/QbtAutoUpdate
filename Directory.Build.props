@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- Windows 10 1809: the minimum supported by qBittorrent's Qt6 builds. -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+
+    <Version>0.1.0</Version>
+    <Product>QbtAutoUpdate</Product>
+    <Company>QbtAutoUpdate</Company>
+    <Copyright>Copyright (c) 2026 QbtAutoUpdate contributors</Copyright>
+    <RepositoryUrl>https://github.com/MrGautier256/QbtAutoUpdate</RepositoryUrl>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+</Project>

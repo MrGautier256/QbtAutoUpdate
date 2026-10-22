@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe: no console window flashes when the scheduled task starts the exe. -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>QbtAutoUpdate</AssemblyName>
+    <RootNamespace>QbtAutoUpdate</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SatelliteResourceLanguages>en;fr</SatelliteResourceLanguages>
+    <!-- Required by the [LibraryImport] source generator (P/Invoke without runtime marshalling). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- Release artifacts: one self-contained file per architecture (dotnet publish -r win-x64). -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\qbittorrent-5B7CC9A2.asc" LogicalName="QbtAutoUpdate.qbittorrent-5B7CC9A2.asc" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="QbtAutoUpdate.Tests" />
+  </ItemGroup>
+
+</Project>
