@@ -35,7 +35,7 @@ internal static class Program
         };
 
         using FlowContext context = FlowContext.Create(command);
-        context.Log.Info($"QbtAutoUpdate {SafeHttpClient.ProductVersion} '{command.Verb}'{(command.DryRun ? " --dry-run" : "")} as {Environment.UserName}");
+        context.Log.Info($"QbtAutoUpdate {SafeHttpClient.ProductVersion} '{command.Verb}'{(command.DryRun ? " --dry-run" : "")} as {Environment.UserName}{(Environment.IsPrivilegedProcess ? " (elevated)" : "")}");
         try
         {
             Task<int> run = command.Verb switch
@@ -43,6 +43,8 @@ internal static class Program
                 "status" => StatusFlow.RunAsync(context, cancellation.Token),
                 "check" => CheckFlow.RunAsync(context, cancellation.Token),
                 "update" => UpdateFlow.RunAsync(context, cancellation.Token),
+                "restart" => RestartFlow.RunAsync(context, cancellation.Token),
+                "webui" => WebUiFlow.RunAsync(context, cancellation.Token),
                 _ => Task.FromResult(NotAvailableYet(context, command.Verb)),
             };
             int exitCode = run.GetAwaiter().GetResult();

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Microsoft.Win32;
 using Org.BouncyCastle.Bcpg;
 using Org.BouncyCastle.Bcpg.OpenPgp;
 using Org.BouncyCastle.Crypto;
@@ -8,6 +9,7 @@ using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Security;
 using QbtAutoUpdate.Core;
+using QbtAutoUpdate.Platform;
 
 namespace QbtAutoUpdate.Tests;
 
@@ -86,6 +88,49 @@ internal sealed class FakeHttpHandler : HttpMessageHandler
         }
         response.RequestMessage = request;
         return Task.FromResult(response);
+    }
+}
+
+/// <summary>A machine with (or without) qBittorrent, for <see cref="InstallDetector"/> and <see cref="InstallerRunner"/>.</summary>
+internal sealed class FakeEnvironment : IInstallEnvironment
+{
+    public const string Dir = @"C:\Program Files\qBittorrent";
+    public static readonly BinaryScanResult Lt12 = new(["1.2.20.0"], ["-LT12K0-"], false);
+    public static readonly BinaryScanResult Lt2 = new(["2.1.2.0"], ["-LT2120-"], false);
+
+    public Dictionary<(RegistryView, string, string), string> Registry { get; } = [];
+    public HashSet<string> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> Directories { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Metadata of qbittorrent.exe (and of any file not listed in <see cref="MetadataByPath"/>).</summary>
+    public ExeMetadata Metadata { get; set; } = new(QbtVersion.Parse("5.2.4"), "The qBittorrent Project", "qBittorrent", PeMachine.Amd64);
+    public Dictionary<string, ExeMetadata> MetadataByPath { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public BinaryScanResult ScanResult { get; set; } = Lt12;
+    public List<string> Running { get; } = [];
+    public string ProgramFilesX86 => @"C:\Program Files (x86)";
+
+    public string? GetMachineString(RegistryView view, string subKey, string valueName) =>
+        Registry.GetValueOrDefault((view, subKey, valueName));
+    public bool FileExists(string path) => Files.Contains(path);
+    public bool DirectoryExists(string path) => Directories.Contains(path);
+    public ExeMetadata GetExeMetadata(string path) => MetadataByPath.GetValueOrDefault(path) ?? Metadata;
+    public BinaryScanResult ScanExe(string path) => ScanResult;
+    public IReadOnlyList<string> RunningQbittorrentPaths() => Running;
+
+    public FakeEnvironment Installed(RegistryView view = RegistryView.Registry32, string dir = Dir, string displayVersion = "5.2.4")
+    {
+        Registry[(view, InstallDetector.AppKey, "InstallLocation")] = dir;
+        Registry[(view, InstallDetector.UninstallKey, "DisplayVersion")] = displayVersion;
+        Registry[(view, InstallDetector.UninstallKey, "UninstallString")] = $"\"{dir}\\uninst.exe\"";
+        Files.Add(dir + @"\qbittorrent.exe");
+        return this;
+    }
+
+    /// <summary>What a successful run of the official installer changes.</summary>
+    public void SimulateInstall(string version, BinaryScanResult scan)
+    {
+        Registry[(RegistryView.Registry32, InstallDetector.UninstallKey, "DisplayVersion")] = version;
+        Metadata = Metadata with { FileVersion = QbtVersion.Parse(version) };
+        ScanResult = scan;
     }
 }
 

@@ -11,7 +11,7 @@ internal static class CheckFlow
     {
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
         InstallInfo install = context.DetectInstall();
-        UpdatePlan plan = await context.CreatePlanner()
+        UpdatePlan plan = await context.CreatePlanner(user)
             .PlanAsync(install, config, user, state, new PlanOptions(Manual: false), cancellationToken)
             .ConfigureAwait(false);
 
@@ -20,7 +20,7 @@ internal static class CheckFlow
             return ExitCodeFor(plan.Outcome);
 
         if (config.Mode == UpdateMode.Auto)
-            return await UpdateFlow.ExecuteAsync(context, plan, cancellationToken).ConfigureAwait(false);
+            return await UpdateFlow.ExecuteAsync(context, plan, config, user, cancellationToken).ConfigureAwait(false);
 
         // Notifications arrive in phase 4.
         context.Say(context.Command.DryRun

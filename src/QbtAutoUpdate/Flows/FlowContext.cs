@@ -42,8 +42,30 @@ internal sealed class FlowContext : IDisposable
 
     public InstallInfo DetectInstall() => new InstallDetector(new SystemInstallEnvironment()).Detect();
 
-    public UpdatePlanner CreatePlanner() => new(
-        Versions, SourceForge, Log, SystemInfo.NativeArchitecture(), () => SystemInfo.IsMeteredConnection(Log), () => DateTimeOffset.Now);
+    public UpdatePlanner CreatePlanner(UserSettings user) => new(
+        Versions, SourceForge, Log, SystemInfo.NativeArchitecture(), () => SystemInfo.IsMeteredConnection(Log), () => DateTimeOffset.Now,
+        user.WebUi is null ? null : cancellationToken => ReadVariantFromWebUiAsync(user, cancellationToken));
+
+    /// <summary>A WebUI client when the user configured one, otherwise null.</summary>
+    public WebUiClient? CreateWebUi(UserSettings user) => user.WebUi is { } settings ? new WebUiClient(settings) : null;
+
+    private async Task<Variant?> ReadVariantFromWebUiAsync(UserSettings user, CancellationToken cancellationToken)
+    {
+        using WebUiClient? client = CreateWebUi(user);
+        if (client is null)
+            return null;
+        try
+        {
+            string? libtorrent = await client.GetLibtorrentVersionAsync(cancellationToken).ConfigureAwait(false);
+            Log.Info($"WebUI reports libtorrent {libtorrent}.");
+            return UpdatePlanner.VariantFromLibtorrentVersion(libtorrent);
+        }
+        catch (WebUiException ex)
+        {
+            Log.Warn($"WebUI buildInfo unavailable: {ex.Message}");
+            return null;
+        }
+    }
 
     public (MachineConfig Config, UserSettings User, UpdateState State) LoadSettings()
     {

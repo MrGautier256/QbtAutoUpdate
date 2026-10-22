@@ -41,8 +41,28 @@ public class CommandLineTests
         Assert.True(command.Has("--quiet"));
     }
 
+    [Fact]
+    public void Webui_options_accept_a_dash_for_standard_input()
+    {
+        CommandLine command = CommandLine.Parse(["webui", "--url", "http://localhost:8080", "--api-key", "-", "--test"]);
+
+        Assert.Null(command.Error);
+        Assert.Equal("-", command.Get("--api-key"));
+        Assert.True(command.Has("--test"));
+    }
+
+    [Fact]
+    public void Restart_is_a_verb()
+    {
+        CommandLine command = CommandLine.Parse(["restart", "--dry-run"]);
+
+        Assert.Equal("restart", command.Verb);
+        Assert.True(command.DryRun);
+    }
+
     [Theory]
     [InlineData("frobnicate")]
+    [InlineData("restart", "--url", "x")]
     [InlineData("check", "--mode", "auto")]
     [InlineData("setup", "--mode")]
     [InlineData("setup", "--quiet=yes")]

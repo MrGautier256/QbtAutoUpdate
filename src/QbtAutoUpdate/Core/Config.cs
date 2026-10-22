@@ -96,13 +96,14 @@ public sealed record MachineConfig
 }
 
 /// <summary>
-/// Per-user choices, %LOCALAPPDATA%\QbtAutoUpdate\user.json. WebUI credentials are added in phase 2
-/// (protected with DPAPI).
+/// Per-user choices, %LOCALAPPDATA%\QbtAutoUpdate\user.json. WebUI secrets are stored encrypted
+/// with DPAPI for the current user and kept in clear only in memory.
 /// </summary>
 public sealed record UserSettings
 {
     public QbtVersion? SkippedVersion { get; init; }
     public DateTimeOffset? SnoozeUntil { get; init; }
+    public WebUiSettings? WebUi { get; init; }
 
     public static readonly UserSettings Default = new();
 
@@ -117,6 +118,7 @@ public sealed record UserSettings
         {
             SkippedVersion = f.Version("skippedVersion"),
             SnoozeUntil = f.Date("snoozeUntil"),
+            WebUi = LoadWebUi(f.Object("webUi"), warnings),
         };
     }
 
@@ -127,6 +129,40 @@ public sealed record UserSettings
             w.WriteString("skippedVersion", skipped.ToString());
         if (SnoozeUntil is { } snooze)
             w.WriteString("snoozeUntil", JsonFiles.ToIso(snooze));
+        if (WebUi is { } webUi)
+        {
+            w.WriteStartObject("webUi");
+            w.WriteString("url", webUi.Url.AbsoluteUri);
+            if (webUi.ApiKey is { } apiKey)
+                w.WriteString("apiKeyProtected", Platform.Dpapi.Protect(apiKey));
+            if (webUi.Username is { } username)
+                w.WriteString("username", username);
+            if (webUi.Password is { } password)
+                w.WriteString("passwordProtected", Platform.Dpapi.Protect(password));
+            w.WriteEndObject();
+        }
         w.WriteEndObject();
     });
+
+    private static WebUiSettings? LoadWebUi(JsonFields? f, List<string> warnings)
+    {
+        if (f is null)
+            return null;
+        if (!Uri.TryCreate(f.String("url"), UriKind.Absolute, out Uri? url) || !WebUiClient.IsAllowedUrl(url))
+        {
+            warnings.Add("user.json: \"webUi.url\" must be an http(s) URL on localhost; the WebUI is not used.");
+            return null;
+        }
+
+        string? apiKeyProtected = f.String("apiKeyProtected");
+        string? passwordProtected = f.String("passwordProtected");
+        string? apiKey = Platform.Dpapi.Unprotect(apiKeyProtected);
+        string? password = Platform.Dpapi.Unprotect(passwordProtected);
+        if ((apiKeyProtected is not null && apiKey is null) || (passwordProtected is not null && password is null))
+        {
+            warnings.Add("user.json: the WebUI secret cannot be decrypted (other user or machine); configure the WebUI again.");
+            return null;
+        }
+        return new WebUiSettings(url, apiKey, f.String("username"), password);
+    }
 }

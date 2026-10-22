@@ -18,6 +18,8 @@ internal static class StatusFlow
         o.WriteLine();
         o.WriteLine("qBittorrent");
         WriteInstall(o, install);
+        if (install.Kind != InstallKind.NotInstalled)
+            WriteRunning(o, context);
 
         o.WriteLine();
         o.WriteLine("Latest release");
@@ -25,7 +27,7 @@ internal static class StatusFlow
         try
         {
             // Manual: report what an explicit update would do, whatever the automatic-run gates say.
-            UpdatePlan plan = await context.CreatePlanner()
+            UpdatePlan plan = await context.CreatePlanner(user)
                 .PlanAsync(install, config, user, state, new PlanOptions(Manual: true), cancellationToken)
                 .ConfigureAwait(false);
             WriteLatest(o, plan);
@@ -78,13 +80,31 @@ internal static class StatusFlow
                 : $"unknown ({(markers.Length > 0 ? markers : "no libtorrent marker found")})");
         }
 
-        IReadOnlyList<QbtProcess> running = ProcessTools.FindQbittorrent();
-        Row(o, "Running", running.Count == 0
-            ? "no"
-            : string.Join("; ", running.Select(p => $"PID {p.Id}, session {p.SessionId}")));
-
         foreach (string note in install.Notes)
             Row(o, "Note", note);
+    }
+
+    private static void WriteRunning(TextWriter o, FlowContext context)
+    {
+        using SessionInstances instances = SessionInstances.Capture(context.Log);
+        if (instances.Mine.Count == 0 && instances.Elsewhere.Count == 0)
+            Row(o, "Running", "no");
+
+        foreach (RunningQbt instance in instances.Mine)
+        {
+            string access = instance.Access switch
+            {
+                QbtAccess.Controllable => "can be closed cleanly",
+                QbtAccess.Elevated => "runs as administrator: cannot be closed by QbtAutoUpdate",
+                QbtAccess.OtherUser => "belongs to another user",
+                _ => "cannot be inspected",
+            };
+            Row(o, "Running", $"PID {instance.Id}, this session ({access})");
+            if (instance.Access == QbtAccess.Controllable)
+                Row(o, "Restart with", SessionInstances.DescribeArguments(instance.Launch));
+        }
+        foreach (QbtProcess other in instances.Elsewhere)
+            Row(o, "Running", $"PID {other.Id}, session {other.SessionId} (another session: blocks updates)");
     }
 
     private static void WriteLatest(TextWriter o, UpdatePlan plan)
@@ -118,6 +138,9 @@ internal static class StatusFlow
         Row(o, "Automatic", config.Enabled ? $"on, every {config.CheckIntervalHours} h" : "off");
         Row(o, "Mode", config.Mode == UpdateMode.Auto ? "auto" : "notify");
         Row(o, "Variant", config.Variant switch { VariantSetting.Lt2 => "libtorrent 2.x (forced)", VariantSetting.Lt12 => "libtorrent 1.2 (forced)", _ => "keep the installed one" });
+        Row(o, "Close timeout", $"{config.CloseTimeoutSeconds} s{(config.AllowForceClose ? ", then terminate (allowForceClose)" : "")}");
+        Row(o, "Backup", config.BackupConfig ? $"settings{(config.BackupTorrents ? " and BT_backup" : "")}, last {ConfigBackup.Keep} kept in {paths.BackupsDir}" : "off");
+        Row(o, "WebUI", user.WebUi is { } webUi ? $"{webUi.Url} ({webUi.AuthenticationKind})" : "not configured (Restart Manager only)");
         if (user.SkippedVersion is { } skipped)
             Row(o, "Skipped", skipped.ToString());
         if (user.SnoozeUntil is { } snooze && snooze > DateTimeOffset.Now)

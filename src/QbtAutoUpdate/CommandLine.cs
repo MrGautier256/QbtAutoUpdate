@@ -9,7 +9,7 @@ internal sealed record CommandLine(
     IReadOnlyDictionary<string, string?> Options,
     string? Error)
 {
-    public static readonly IReadOnlyList<string> Verbs = ["setup", "uninstall", "check", "update", "apply", "status", "rollback", "help"];
+    public static readonly IReadOnlyList<string> Verbs = ["setup", "uninstall", "check", "update", "apply", "status", "rollback", "restart", "webui", "help"];
 
     private static readonly string[] GlobalFlags = ["--dry-run", "--verbose"];
 
@@ -18,6 +18,11 @@ internal sealed record CommandLine(
     {
         ["setup"] = new() { ["--mode"] = true, ["--interval"] = true, ["--variant"] = true, ["--quiet"] = false },
         ["uninstall"] = new() { ["--keep-logs"] = false, ["--quiet"] = false },
+        ["webui"] = new()
+        {
+            ["--url"] = true, ["--api-key"] = true, ["--username"] = true, ["--password"] = true,
+            ["--clear"] = false, ["--test"] = false,
+        },
     };
 
     public string? Get(string option) => Options.TryGetValue(option, out string? value) ? value : null;
@@ -111,6 +116,10 @@ internal sealed record CommandLine(
                         --mode auto|notify  --interval <hours>  --variant auto|lt2|lt12  --quiet
           uninstall   Remove QbtAutoUpdate (administrator).  --keep-logs  --quiet
           rollback    Reinstall the previous qBittorrent release (administrator).
+          restart     Close qBittorrent the way an update does and start it again (diagnostic).
+          webui       Optional access to qBittorrent's WebUI, for this Windows user.
+                        --url http://localhost:8080  --api-key <key>|-  --username <name> --password <pw>|-
+                        --test  --clear      ("-" reads the secret from standard input)
           apply       Internal: run by the SYSTEM scheduled task only.
 
         Options:
@@ -118,7 +127,9 @@ internal sealed record CommandLine(
           --verbose   Detailed log output.
 
         Exit codes: 0 ok, 1 error, 2 usage, 3 unsupported installation,
-                    4 release source unavailable, 5 verification failed, 9 not available yet.
+                    4 release source unavailable, 5 verification failed,
+                    6 qBittorrent busy (could not be closed, other session), 7 install failed,
+                    9 not available yet.
         """;
 
     private static CommandLine Fail(string? verb, string error) =>
@@ -133,5 +144,7 @@ internal static class ExitCodes
     public const int Unsupported = 3;
     public const int SourceUnavailable = 4;
     public const int VerificationFailed = 5;
+    public const int Busy = 6;
+    public const int InstallFailed = 7;
     public const int NotAvailableYet = 9;
 }

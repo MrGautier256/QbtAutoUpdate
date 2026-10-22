@@ -40,11 +40,12 @@ public class UpdatePlannerTests
 
     private static async Task<UpdatePlan> Plan(
         InstallInfo? install = null, MachineConfig? config = null, UserSettings? user = null, UpdateState? state = null,
-        bool manual = false, FakeHttpHandler? server = null, bool metered = false, DateTimeOffset? now = null)
+        bool manual = false, FakeHttpHandler? server = null, bool metered = false, DateTimeOffset? now = null, Variant? webUi = null)
     {
         var log = new ListLog();
         using var http = new SafeHttpClient(log, server ?? Server());
-        var planner = new UpdatePlanner(new VersionSource(http, log), new SourceForgeClient(http, log), log, CpuArch.X64, () => metered, () => now ?? Now);
+        var planner = new UpdatePlanner(new VersionSource(http, log), new SourceForgeClient(http, log), log, CpuArch.X64, () => metered, () => now ?? Now,
+            webUi is null ? null : _ => Task.FromResult(webUi));
         return await planner.PlanAsync(
             install ?? Installed524Lt12, config ?? MachineConfig.Default, user ?? UserSettings.Default, state ?? UpdateState.Empty,
             new PlanOptions(manual), TestContext.Current.CancellationToken);
@@ -97,6 +98,17 @@ public class UpdatePlannerTests
 
         Assert.Equal(Variant.Lt2, plan.Variant);
         Assert.Equal("state.json", plan.VariantSource);
+    }
+
+    [Fact]
+    public async Task The_webui_comes_before_the_state_file()
+    {
+        var state = new UpdateState { LastInstall = new InstallRecord(QbtVersion.Parse("5.2.4"), Variant.Lt12, Now, "success", 0, null) };
+
+        UpdatePlan plan = await Plan(WithVariant(Installed524Lt12, null), state: state, webUi: Variant.Lt2);
+
+        Assert.Equal(Variant.Lt2, plan.Variant);
+        Assert.Equal("WebUI buildInfo", plan.VariantSource);
     }
 
     [Fact]

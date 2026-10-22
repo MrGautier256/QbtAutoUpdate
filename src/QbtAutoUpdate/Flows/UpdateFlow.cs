@@ -4,9 +4,9 @@ using QbtAutoUpdate.Platform;
 namespace QbtAutoUpdate.Flows;
 
 /// <summary>
-/// User-side update (spec §4.3). Phase 1 covers download and signature verification; closing
-/// qBittorrent, handing over to the SYSTEM task and restarting arrive in phases 2 and 3, so for
-/// now the flow only runs with --dry-run.
+/// User-side update (spec §4.3): download and verify, close qBittorrent cleanly, back up its
+/// settings, install, start it again. Until the SYSTEM task exists (phase 3), installing requires
+/// running this command elevated by hand: the "development mode" of the spec.
 /// </summary>
 internal static class UpdateFlow
 {
@@ -15,7 +15,7 @@ internal static class UpdateFlow
     {
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
         InstallInfo install = context.DetectInstall();
-        UpdatePlan plan = await context.CreatePlanner()
+        UpdatePlan plan = await context.CreatePlanner(user)
             .PlanAsync(install, config, user, state, new PlanOptions(Manual: true), cancellationToken)
             .ConfigureAwait(false);
 
@@ -23,15 +23,17 @@ internal static class UpdateFlow
         if (!plan.IsReady)
             return CheckFlow.ExitCodeFor(plan.Outcome);
 
-        return await ExecuteAsync(context, plan, cancellationToken).ConfigureAwait(false);
+        return await ExecuteAsync(context, plan, config, user, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Carries out a ready plan: download, verify, then (later phases) close, install, restart.</summary>
-    public static async Task<int> ExecuteAsync(FlowContext context, UpdatePlan plan, CancellationToken cancellationToken)
+    public static async Task<int> ExecuteAsync(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user, CancellationToken cancellationToken)
     {
-        if (!context.Command.DryRun)
+        bool dryRun = context.Command.DryRun;
+        bool developmentMode = Environment.IsPrivilegedProcess;
+        if (!dryRun && !developmentMode)
         {
-            context.Say("Installing is not available in this build yet; run with --dry-run to download and verify only.");
+            context.Say("Installing needs the QbtAutoUpdate scheduled task, which arrives with 'setup'. "
+                        + "For development, run this command from an elevated terminal.");
             return ExitCodes.NotAvailableYet;
         }
 
@@ -40,9 +42,9 @@ internal static class UpdateFlow
         ClearDirectory(staging);
         try
         {
+            // 4. Download and verify first: fail before touching qBittorrent.
             context.Say($"Downloading {release.Installer!.Name} ({FormatSize(release.Installer.Size)}) and its signature...");
             DownloadedRelease downloaded = await context.Downloader.DownloadAsync(release, staging, cancellationToken).ConfigureAwait(false);
-
             PgpResult verdict = PgpVerifier.CreateOfficial().VerifyFile(downloaded.InstallerPath, downloaded.SignaturePath, DateTimeOffset.UtcNow);
             if (!verdict.IsValid)
             {
@@ -52,9 +54,52 @@ internal static class UpdateFlow
             }
             context.Say($"Signature OK: {verdict.Detail}, signed {verdict.SignedAt:yyyy-MM-dd HH:mm} UTC.");
 
-            ReportRunningInstances(context);
-            context.Say($"[dry-run] Would hand {downloaded.InstallerFileName} to the SYSTEM task and install it into {plan.Install.InstallDir}.");
-            return ExitCodes.Ok;
+            using SessionInstances instances = SessionInstances.Capture(context.Log);
+            if (instances.BlockingReason is { } blocking)
+            {
+                context.Say(blocking + " Nothing was changed.");
+                return ExitCodes.Busy;
+            }
+
+            if (dryRun)
+            {
+                DescribeDryRun(context, plan, config, user, instances, downloaded, developmentMode);
+                return ExitCodes.Ok;
+            }
+
+            // 5. Close qBittorrent cleanly; on failure, put back what was closed and stop.
+            (bool closedAll, List<RunningQbt> closed, string closeMessage) = await instances.CloseAllAsync(context, config, user, cancellationToken).ConfigureAwait(false);
+            context.Say(closeMessage);
+            if (!closedAll)
+            {
+                SessionInstances.Relaunch(closed, plan.Install.ExePath, context.Log);
+                return ExitCodes.Busy;
+            }
+
+            if (config.BackupConfig)
+                BackUp(context, plan, config, closed);
+
+            // 6. Install. Development mode: this elevated process runs the installer itself.
+            InstallOutcome outcome = new InstallerRunner(
+                    PgpVerifier.CreateOfficial(), new SystemInstallEnvironment(), context.Log, ProcessTools.FindQbittorrent,
+                    new InstallerProcess(), SystemInfo.NativeArchitecture(), () => DateTimeOffset.UtcNow)
+                .Install(new InstallerFile(downloaded.InstallerPath, downloaded.SignaturePath, downloaded.InstallerFileName), plan.Install, plan.Variant!.Value);
+            context.Say(outcome.Message);
+
+            // 7. Start again what was running, whatever the outcome.
+            if (closed.Count > 0)
+            {
+                int started = SessionInstances.Relaunch(closed, plan.Install.ExePath, context.Log);
+                context.Say(started == closed.Count ? "qBittorrent started again." : "qBittorrent could not be started again: start it yourself.");
+            }
+
+            return outcome.Status switch
+            {
+                InstallStatus.Installed => ExitCodes.Ok,
+                InstallStatus.Busy => ExitCodes.Busy,
+                InstallStatus.Refused => ExitCodes.VerificationFailed,
+                _ => ExitCodes.InstallFailed,
+            };
         }
         finally
         {
@@ -71,22 +116,55 @@ internal static class UpdateFlow
         _ => $"The installer signature was refused ({result.Verdict}: {result.Detail}). Nothing was installed.",
     };
 
-    private static void ReportRunningInstances(FlowContext context)
+    internal static string FormatSize(long? bytes) =>
+        bytes is { } b ? $"{b / (1024.0 * 1024.0):0.0} MB" : "size unknown";
+
+    private static void DescribeDryRun(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user,
+        SessionInstances instances, DownloadedRelease downloaded, bool developmentMode)
     {
-        using var self = System.Diagnostics.Process.GetCurrentProcess();
-        int session = self.SessionId;
-        IReadOnlyList<QbtProcess> running = ProcessTools.FindQbittorrent();
-        if (running.Count == 0)
-        {
+        if (instances.Mine.Count == 0)
             context.Say("[dry-run] qBittorrent is not running: nothing to close or restart.");
-            return;
-        }
-        foreach (QbtProcess process in running)
+        foreach (RunningQbt instance in instances.Mine)
+            context.Say("[dry-run] Would " + instances.DescribeClose(instance, user, config) + ".");
+
+        if (config.BackupConfig)
         {
-            context.Say(process.SessionId == session
-                ? $"[dry-run] Would close qBittorrent (PID {process.Id}) cleanly, then restart it after the update."
-                : $"[dry-run] qBittorrent also runs in another Windows session (PID {process.Id}, session {process.SessionId}): the update would wait for it to close.");
+            foreach (QbtProfile? profile in ProfilesToBackUp(plan, instances.Mine))
+                context.Say(profile is null
+                    ? "[dry-run] A relative --profile cannot be located: its settings would not be backed up."
+                    : $"[dry-run] Would back up the settings in {profile.ConfigDir}{(config.BackupTorrents ? " and BT_backup" : "")}.");
         }
+
+        context.Say(developmentMode
+            ? $"[dry-run] Would run {downloaded.InstallerFileName} /S /D={plan.Install.InstallDir} (development mode: elevated)."
+            : $"[dry-run] Would hand {downloaded.InstallerFileName} to the SYSTEM task and install it into {plan.Install.InstallDir}.");
+    }
+
+    private static void BackUp(FlowContext context, UpdatePlan plan, MachineConfig config, List<RunningQbt> closed)
+    {
+        try
+        {
+            List<QbtProfile> profiles = ProfilesToBackUp(plan, closed).OfType<QbtProfile>().ToList();
+            string? folder = ConfigBackup.Create(profiles, plan.Install.Version!.Value, context.Paths.BackupsDir, config.BackupTorrents, DateTimeOffset.Now, context.Log);
+            if (folder is not null)
+                context.Say($"Settings backed up to {folder}.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The installer does not touch the profile: a failed backup is not a reason to stop.
+            context.Log.Warn($"Settings backup failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>The profiles of the closed instances, or the default profile when none was running.</summary>
+    private static IEnumerable<QbtProfile?> ProfilesToBackUp(UpdatePlan plan, IReadOnlyList<RunningQbt> instances)
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        IEnumerable<QbtLaunch> launches = instances.Count == 0 ? [QbtLaunch.Default] : instances.Select(i => i.Launch);
+        return launches
+            .Select(l => l.ResolveProfile(plan.Install.InstallDir, appData, localAppData, Directory.Exists))
+            .DistinctBy(p => p?.ConfigDir, StringComparer.OrdinalIgnoreCase);
     }
 
     private static void ClearDirectory(string path, bool deleteItself = false)
@@ -102,7 +180,4 @@ internal static class UpdateFlow
         {
         }
     }
-
-    internal static string FormatSize(long? bytes) =>
-        bytes is { } b ? $"{b / (1024.0 * 1024.0):0.0} MB" : "size unknown";
 }

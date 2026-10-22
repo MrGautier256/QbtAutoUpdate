@@ -57,6 +57,16 @@ Legend: ✅ confirmed as specified · ⚠️ differs from the spec, design must 
 
 ✅ FossHub removed in 5.3.0: Changelog line `OTHER: Remove FOSSHub site for program updates (vafada) #24611`.
 
+➕ Observed on 5.2.4: at start-up it still queries `https://www.fosshub.com/feed/5b8793a7f9ee5a5c3e97a3b2.xml`
+and logs a 404, but its other sources (`versions.json`) work. It does announce 5.3.0, with a **modal dialog
+at every start**: "A new version is available. Do you want to download 5.3.0?". Answering Yes only opens the
+download page. Two consequences:
+- When QbtAutoUpdate closes qBittorrent, that modal may well be open. Tested: the Restart Manager path still
+  closes cleanly with the modal open (TESTING.md).
+- Every restart of an outdated qBittorrent shows the modal again, which is noisy during a postponed or failed
+  update. The README recommends turning the built-in check off (*Options › Advanced › Check for program
+  updates*, key `Advanced\updateCheck` in `[Preferences]`).
+
 ➕ Pre-release and maintenance builds exist side by side on SourceForge: `qbittorrent-5.3.0beta1`,
 `qbittorrent-5.3.0rc1` and `qbittorrent-5.2.4` (a 5.2.x maintenance release published on 2026-09-28,
 the same day as 5.3.0rc1). `versions.json` only ever announces stable releases. The tool must only act
@@ -340,8 +350,13 @@ This confirms that a plain `WM_CLOSE` is unreliable.
 
 So the clean path depends on the **main window's HWND** receiving the message. `mainwindow.cpp` always
 creates it when the tray is active: start minimized runs `showMinimized()` then `hide()`. A hidden but
-existing top-level HWND should receive the Restart Manager broadcast. **To validate in Sandbox**, with
-*minimize to tray*, *close to tray*, *start minimized* and *confirm on exit* all enabled.
+existing top-level HWND should receive the Restart Manager broadcast.
+
+✅ **Confirmed on a real qBittorrent 5.2.4** (TESTING.md, 2026-10-22). With the main window hidden in the
+tray, the process has a top-level but invisible `Qt6103QWindowIcon` window. Restart Manager closed it in about
+1 s, and qBittorrent's log shows its full clean exit: shutdown initiated, resume data saved, session
+terminated, ready to exit. 🔬 Still to see in Sandbox: *start minimized* (window never shown), *confirm on
+exit* with active torrents, and a long shutdown with many torrents.
 
 ### 7.3 Restart Manager
 
@@ -396,6 +411,22 @@ Rule: rebuild the command line from a whitelist of the options in `src/app/cmdop
 
 The HKCU `Run` value that qBittorrent writes itself has the form
 `"…\qbittorrent.exe" "--profile=" "--configuration="`, with empty values. The parser must accept that form.
+
+➕ Parsing rules confirmed in `parseCommandLine()` (`release-5.3.0`):
+- An argument is an option only if it starts with `--` **and does not end with `.torrent`**, or is a two-character
+  `-x`. Everything else, including `--something.torrent`, is a file path, magnet link or URL to add.
+- Options with a value accept only `--name=value` (`--profile D:\p` is an error); values are unquoted from `'`
+  or `"`. `--profile` is made absolute against qBittorrent's working directory.
+- Every option can also come from a `QBT_<NAME>` environment variable.
+
+➕ Profile layout (`src/base/profile_p.cpp`), with `[_name]` the optional `--configuration` suffix:
+- default: config `%APPDATA%\qBittorrent[_name]` (QSettings INI files), data `%LOCALAPPDATA%\qBittorrent[_name]`;
+- custom root (`--profile=R`, or portable `profile` folder next to the exe): `R\qBittorrent[_name]\config`,
+  `\data`, `\cache`.
+
+➕ The command line of a running process is readable without WMI through `NtQueryInformationProcess`
+(`ProcessCommandLineInformation`, needs only `PROCESS_QUERY_LIMITED_INFORMATION`). It returned the 5.2.4
+command line quoted above on the development machine.
 
 ### 7.6 Profile and backup ➕
 

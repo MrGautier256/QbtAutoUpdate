@@ -44,7 +44,8 @@ public sealed class UpdatePlanner(
     ILog log,
     CpuArch machine,
     Func<bool> isMetered,
-    Func<DateTimeOffset> clock)
+    Func<DateTimeOffset> clock,
+    Func<CancellationToken, Task<Variant?>>? webUiVariant = null)
 {
     public async Task<UpdatePlan> PlanAsync(
         InstallInfo install, MachineConfig config, UserSettings user, UpdateState state,
@@ -81,7 +82,7 @@ public sealed class UpdatePlanner(
         if (!options.Manual && user.SnoozeUntil > now)
             return new UpdatePlan(PlanOutcome.Snoozed, $"Reminder postponed until {user.SnoozeUntil:yyyy-MM-dd HH:mm}.", install, latest);
 
-        if (DecideVariant(config, install, state) is not { } decision)
+        if (await DecideVariantAsync(config, install, state, cancellationToken).ConfigureAwait(false) is not { } decision)
         {
             return new UpdatePlan(PlanOutcome.VariantUnknown,
                 "The libtorrent series of the installed qBittorrent is unknown; choose it in the settings (lt2 or lt12).", install, latest);
@@ -121,10 +122,11 @@ public sealed class UpdatePlanner(
 
     /// <summary>
     /// Variant to install, in order: an explicit choice in config.json, the libtorrent series read from
-    /// the installed qbittorrent.exe, then the last install recorded in state.json. The binary comes
-    /// before state.json because the user may have reinstalled another variant by hand since.
+    /// the installed qbittorrent.exe, the WebUI's buildInfo, then the last install recorded in state.json.
+    /// The binary comes before state.json because the user may have reinstalled another variant by hand since.
     /// </summary>
-    internal (Variant Variant, string Source)? DecideVariant(MachineConfig config, InstallInfo install, UpdateState state)
+    internal async Task<(Variant Variant, string Source)?> DecideVariantAsync(
+        MachineConfig config, InstallInfo install, UpdateState state, CancellationToken cancellationToken)
     {
         switch (config.Variant)
         {
@@ -142,8 +144,19 @@ public sealed class UpdatePlanner(
             return (detected, "qbittorrent.exe");
         }
 
+        if (webUiVariant is not null && await webUiVariant(cancellationToken).ConfigureAwait(false) is { } fromWebUi)
+            return (fromWebUi, "WebUI buildInfo");
+
         return recorded is { } fromState ? (fromState, "state.json") : null;
     }
+
+    /// <summary>"1.2.20.0" → libtorrent 1.x, "2.1.2.0" → libtorrent 2.x.</summary>
+    public static Variant? VariantFromLibtorrentVersion(string? version) => version switch
+    {
+        ['1', '.', ..] => Variant.Lt12,
+        ['2', '.', ..] => Variant.Lt2,
+        _ => null,
+    };
 
     private static string DescribeUnsupported(InstallInfo install) => install.Kind switch
     {

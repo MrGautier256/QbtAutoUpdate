@@ -9,35 +9,7 @@ public class InstallDetectorTests
     private const string Dir = @"C:\Program Files\qBittorrent";
     private const string Exe = Dir + @"\qbittorrent.exe";
 
-    private static readonly BinaryScanResult Lt12 = new(["1.2.20.0"], ["-LT12K0-"], false);
-
-    private sealed class FakeEnvironment : IInstallEnvironment
-    {
-        public Dictionary<(RegistryView, string, string), string> Registry { get; } = [];
-        public HashSet<string> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public HashSet<string> Directories { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public ExeMetadata Metadata { get; set; } = new(QbtVersion.Parse("5.2.4"), "The qBittorrent Project", "qBittorrent", PeMachine.Amd64);
-        public BinaryScanResult ScanResult { get; set; } = Lt12;
-        public List<string> Running { get; } = [];
-        public string ProgramFilesX86 => @"C:\Program Files (x86)";
-
-        public string? GetMachineString(RegistryView view, string subKey, string valueName) =>
-            Registry.GetValueOrDefault((view, subKey, valueName));
-        public bool FileExists(string path) => Files.Contains(path);
-        public bool DirectoryExists(string path) => Directories.Contains(path);
-        public ExeMetadata GetExeMetadata(string path) => Metadata;
-        public BinaryScanResult ScanExe(string path) => ScanResult;
-        public IReadOnlyList<string> RunningQbittorrentPaths() => Running;
-
-        public FakeEnvironment Installed(RegistryView view = RegistryView.Registry32, string dir = Dir, string displayVersion = "5.2.4")
-        {
-            Registry[(view, InstallDetector.AppKey, "InstallLocation")] = dir;
-            Registry[(view, InstallDetector.UninstallKey, "DisplayVersion")] = displayVersion;
-            Registry[(view, InstallDetector.UninstallKey, "UninstallString")] = $"\"{dir}\\uninst.exe\"";
-            Files.Add(dir + @"\qbittorrent.exe");
-            return this;
-        }
-    }
+    private static readonly BinaryScanResult Lt12 = FakeEnvironment.Lt12;
 
     private static InstallInfo Detect(FakeEnvironment environment) => new InstallDetector(environment).Detect();
 

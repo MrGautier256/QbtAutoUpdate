@@ -74,7 +74,7 @@ This deliberately differs from the spec, which puts `state.json` first. The libt
 `qbittorrent.exe` (FINDINGS §6.2) describe what is installed *now*; `state.json` goes stale if the user
 reinstalls another variant by hand. When the two disagree, the binary wins and a warning is logged. An
 explicit `variant` in `config.json` overrides both, because it is the user's explicit choice. The WebUI
-`buildInfo` source arrives with the WebUI client in phase 2, the setup question in phase 3. Until then an
+`buildInfo` source exists since phase 2 (D-22); the setup question arrives in phase 3. Until then an
 unknown variant means "do nothing".
 
 **D-12. Fork detection without `CompanyName`.**
@@ -117,8 +117,9 @@ never lower, variant) apply to every run.
 
 **D-18. Exit codes.**
 0 means OK, including normal waiting states (up to date, snoozed, not yet on SourceForge). Other codes: 1
-error, 2 usage, 3 unsupported installation or unknown variant, 4 release sources unreachable, 5 signature
-refused, 9 feature not available yet (temporary, during development).
+error, 2 usage, 3 unsupported installation or unknown variant, 4 release sources unreachable, 5 signature or
+final installer check refused, 6 qBittorrent busy (could not be closed, runs in another session or as
+administrator), 7 install failed, 9 feature not available yet (temporary, during development).
 
 **D-19. Logging.**
 Size-based rotation at 1 MB, ten files (`QbtAutoUpdate.log`, `.1.log` … `.9.log`). Each write opens the file
@@ -132,16 +133,76 @@ for CI. They run only when `QBTAU_INTEGRATION=1`, otherwise they are reported as
 spec's requirement: both real 5.3.0 installers verify against the real key, and the offline variant
 heuristic reads the right series from each unpacked `qbittorrent.exe`.
 
+## Closing, installing and restarting (phase 2)
+
+**D-21. Closing order: WebUI first when configured, Restart Manager otherwise.**
+When the user configured the WebUI, its shutdown API is tried first: it runs qBittorrent's normal exit path
+and shows no UI. If it fails (unreachable, refused), Restart Manager takes over (FINDINGS §7.3), never forced.
+In both cases success means the snapshotted process has really exited within `closeTimeoutSeconds`; the
+`RmShutdown` return value is only logged. Once the WebUI has accepted a shutdown, Restart Manager is not
+sent as well: qBittorrent is already saving, and a late `WM_CLOSE` could raise its exit confirmation.
+
+**D-22. WebUI access: loopback only, API key preferred, secrets under DPAPI.**
+- The URL must point to this computer (`localhost`, `127.0.0.0/8`, `::1`): the tool only ever shuts down the
+  local instance, and credentials must not cross a network. Self-signed HTTPS certificates are accepted for
+  those addresses only, because that is how qBittorrent's HTTPS WebUI is usually set up.
+- The API key (5.2.0+) is sent as `Authorization: Bearer` and needs no login; username and password log in
+  through `/api/v2/auth/login`. All requests carry same-origin `Origin` and `Referer` headers.
+- Secrets are encrypted with DPAPI, CurrentUser scope, plus an application entropy, before being written to
+  `user.json`. `System.Security.Cryptography.ProtectedData` is Microsoft's own package for that API; it adds
+  no third-party code.
+- The spec lists no way to configure the WebUI, so there is a `webui` command (`--url`, `--api-key`,
+  `--username`, `--password`, `--test`, `--clear`). A secret given as `-` is read from redirected standard
+  input, to keep it out of shell history.
+- The WebUI's `buildInfo` is also the third variant source (D-11).
+
+**D-23. Development mode = `update` run elevated by hand.**
+Until the SYSTEM task exists (phase 3), an elevated `update` runs the installer itself through
+`InstallerRunner`. That class performs the same final checks `apply` will perform: name table, PGP, version
+resource, no downgrade, variant, architecture, no qBittorrent running in any session, then `/S /D=<folder>`,
+exit code and post-install check. A non-elevated `update` stops *before* closing anything (exit code 9).
+In development mode the installer runs from the user's staging folder: acceptable, because the person who
+elevated is trusted. The protected `work\` copy belongs to `apply`.
+
+**D-24. Restart: same instance, never elevated, even after a failed install.**
+- The command line is rebuilt from a whitelist of instance options (`QbtLaunch`, FINDINGS §7.5).
+- From a normal process, qBittorrent is started through ShellExecute, like Explorer does. `UseShellExecute=false`
+  would make it inherit QbtAutoUpdate's handles: a terminal reading a redirected output would then wait until
+  qBittorrent exits.
+- From an elevated process (development mode, rollback), it is started with the desktop shell's token
+  (`CreateProcessWithTokenW`) so that it is not elevated. If that is impossible, it is not started and the
+  user is told to start it.
+- Working directory: the install folder. `QBT_*` environment variables of the original launch are not
+  replayed, and a relative `--profile` (resolved by qBittorrent against an unknown directory) is replayed
+  as is but cannot be backed up.
+- Instances that were closed are started again whatever the outcome of the install.
+
+**D-25. Settings backup.**
+Copies the top-level `*.ini` and `*.json` files of each closed instance's config folder: the extension filter
+naturally skips `lockfile` and the temporary `qBittorrent_new.ini.XXXXXX` files. When no instance was
+running, the default profile is used. `backupTorrents` zips `BT_backup` with the fastest compression. The 3
+newest backups are kept, ordered by creation time. A failed backup is logged but does not stop the update:
+the installer never touches the profile.
+
+**D-26. Several instances, other sessions, elevation.**
+- Every instance in the user's session is closed, one by one, through Restart Manager; the WebUI is used
+  only when exactly one instance runs, since its URL identifies a single instance. The first failure stops
+  the sequence, and the instances already closed are started again.
+- A qBittorrent in another Windows session, or one running as administrator while QbtAutoUpdate is not,
+  blocks the update *before* anything is touched (exit code 6). The SYSTEM side would refuse to install
+  anyway.
+
+**D-27. `allowForceClose`.**
+Off by default. When on, and only after the graceful budget is spent, the snapshotted process is terminated.
+The kill goes through the handle opened at snapshot time, so a reused PID is never hit. It is logged as a
+warning. The README will explain the risk (lost resume data, rechecks).
+
+**D-28. `restart` command.**
+`restart` closes qBittorrent exactly like an update would, then starts it again, without installing
+anything. Users can check that the clean shutdown works with their own settings (tray, confirmation, many
+torrents), and the Sandbox scenario uses it to validate FINDINGS §7.2 separately from installation.
+
 ## Decided ahead of later phases
 
-These choices come from the findings and are recorded now so they are not lost:
-
-- **Relaunch (phase 2).** Rebuild the command line from a whitelist of instance options; never replay
-  `.torrent` paths or magnet links (FINDINGS §7.5).
-- **Closing qBittorrent (phase 2).** The `RmShutdown` result is informational only; success means the
-  registered process has really exited (FINDINGS §7.3).
-- **WebUI (phase 2).** Prefer API key authentication (5.2.0+), stored with DPAPI; username and password are
-  the fallback.
-- **Config backup (phase 2).** Back up top-level `*.ini` and `*.json` from the profile, not only `*.ini`.
-- **apply (phase 3).** After installing, scan the new `qbittorrent.exe` and record a variant mismatch: a
-  renamed but genuine installer is the residual risk described in FINDINGS §6.3.
+- **apply (phase 3).** Wraps `InstallerRunner` (D-23) with the inbox, the protected `work\` copy and
+  `state.json`. The post-install variant check (FINDINGS §6.3) is already in `InstallerRunner`.
