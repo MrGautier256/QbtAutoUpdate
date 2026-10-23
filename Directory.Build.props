@@ -9,7 +9,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
 
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <Product>QbtAutoUpdate</Product>
     <Company>QbtAutoUpdate</Company>
     <Copyright>Copyright (c) 2026 QbtAutoUpdate contributors</Copyright>

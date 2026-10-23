@@ -1,0 +1,113 @@
+name: Release
+
+# Pushing a tag such as v1.2.0 builds, tests and publishes the GitHub release with both executables,
+# SHA256SUMS.txt and the CHANGELOG.md section of that version. "Run workflow" does the same from the
+# GitHub UI and creates the tag on the chosen branch.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, such as 1.2.0 (creates the tag v1.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_VERSION.Trim().TrimStart('v') } else { $env:GITHUB_REF_NAME.Substring(1) }
+          # Plain X.Y.Z: the exe compares its version with the installed one to offer an upgrade.
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "'$version' is not a version such as 1.2.0." }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            gh release view "v$version" --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "Release v$version already exists." }
+            $global:LASTEXITCODE = 0
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          dotnet build --configuration Release -p:Version=${{ steps.version.outputs.version }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test --configuration Release --no-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish src/QbtAutoUpdate --configuration Release --runtime $rid --output "publish/$rid" -p:Version=${{ steps.version.outputs.version }}
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Copy-Item "publish/$rid/QbtAutoUpdate.exe" "dist/QbtAutoUpdate-$rid.exe"
+          }
+          $sums = Get-ChildItem dist -Filter *.exe | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+          # LF line endings, like sha256sum's output.
+          [IO.File]::WriteAllText("$PWD/dist/SHA256SUMS.txt", ($sums -join "`n") + "`n")
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Release notes
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $notes = New-Object System.Collections.Generic.List[string]
+          $inSection = $false
+          foreach ($line in Get-Content CHANGELOG.md -Encoding utf8) {
+            if ($line -match '^## \[') {
+              if ($inSection) { break }
+              $inSection = $line -match ('^## \[' + [regex]::Escape($version) + '\]')
+              continue
+            }
+            if ($inSection) { $notes.Add($line) }
+          }
+          if ($notes.Count -eq 0) {
+            Write-Output "::warning::CHANGELOG.md has no section for $version."
+            $notes.Add("See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/CHANGELOG.md).")
+          }
+          $notes.Add('')
+          $notes.Add('## Download')
+          $notes.Add('')
+          $notes.Add('- `QbtAutoUpdate-win-x64.exe`: most PCs (Intel and AMD, 64-bit).')
+          $notes.Add('- `QbtAutoUpdate-win-arm64.exe`: Windows on ARM.')
+          $notes.Add('')
+          $notes.Add('Double-click it and follow the window. The executable is not code-signed yet: Windows SmartScreen may')
+          $notes.Add('warn about an unrecognized app ("More info", then "Run anyway"). `SHA256SUMS.txt` lists the SHA-256 of each file.')
+          [IO.File]::WriteAllText("$PWD/notes.md", ($notes -join "`n").Trim() + "`n")
+          Get-Content notes.md
+
+      - name: Create the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          # A tag push already has the tag; "Run workflow" creates it on the commit that was built.
+          $verify = if ($env:GITHUB_EVENT_NAME -eq 'push') { @('--verify-tag') } else { @('--target', $env:GITHUB_SHA) }
+          gh release create $tag dist/QbtAutoUpdate-win-x64.exe dist/QbtAutoUpdate-win-arm64.exe dist/SHA256SUMS.txt `
+            --repo $env:GITHUB_REPOSITORY --title "QbtAutoUpdate ${{ steps.version.outputs.version }}" --notes-file notes.md @verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

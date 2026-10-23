@@ -150,8 +150,6 @@ internal sealed record CommandLine(
           config      Change settings (administrator); without options, show them.
                         --enabled on|off  --mode auto|notify  --interval <hours>  --variant auto|lt2|lt12
                         --skipped-version <version>|none   (set by rollback: automatic runs skip it)
-
-        Without a command (double-click), opens the setup window, or the settings window once installed.
           rollback    Reinstall the release before the installed one, same libtorrent series (administrator).
                       Automatic updates then skip the version that was rolled back.
           restart     Close qBittorrent the way an update does and start it again (diagnostic).
@@ -159,6 +157,8 @@ internal sealed record CommandLine(
                         --url http://localhost:8080  --api-key <key>|-  --username <name> --password <pw>|-
                         --test  --clear      ("-" reads the secret from standard input)
           apply       Internal: run by the SYSTEM scheduled task only.
+
+        Without a command (double-click), opens the setup window, or the settings window once installed.
 
         Options:
           --dry-run   Do everything except closing qBittorrent and installing.

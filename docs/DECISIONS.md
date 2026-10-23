@@ -25,7 +25,17 @@ xUnit v3 4.x runs only on Microsoft Testing Platform, and the .NET 10 SDK requir
 `global.json` (`"test": { "runner": "Microsoft.Testing.Platform" }`). VSTest packages are not needed.
 Package versions are managed centrally in `Directory.Packages.props`.
 
-**D-05. Trimming: viable, decision deferred to phase 5.**
+**D-05. Trimming: on since phase 5 (13 MB instead of 45 MB per architecture).**
+*Phase 5 decision.* `PublishTrimmed` is on for the release executables.
+- The two remaining warnings are IL2104 summaries for `WinRT.Runtime` and `Microsoft.Windows.SDK.NET`.
+  Listed one by one (`TrimmerSingleWarn=false`), they are 35 IL2081 warnings, all in CsWinRT's fallback
+  marshalling for generic collections and async operations, which QbtAutoUpdate does not use: toasts, XML
+  and the connection cost are synchronous calls.
+- IL2104 is therefore kept visible but not fatal (`WarningsNotAsErrors`). Any trim warning about this
+  project's own code still fails the build.
+- The trimmed exe passed the Sandbox scenarios (TESTING.md, phase 5).
+
+*Original note (phase 1):*
 Measured at the end of phase 1: untrimmed single-file publish is about 46 MB per architecture. A trimmed
 publish is 13 MB, and `status` plus `update --dry-run` (PGP, WinRT connection cost, HTTP) worked. The only
 warnings were two IL2104 warnings from `WinRT.Runtime` and `Microsoft.Windows.SDK.NET`. Trimming is not
@@ -332,3 +342,26 @@ the rollback hold (D-40) is machine-wide. A newer version is announced at once.
 `tools/New-Icon.ps1` draws the icon (a circular arrow around a download arrow on a blue tile) with
 System.Drawing and writes `QbtAutoUpdate.ico` (16 to 256 px PNG frames) and the 256 px PNG used by toasts. The
 generated files are committed; the script is there to change them. Toasts use the PNG.
+## Continuous integration and releases (phase 5)
+
+**D-43. GitHub Actions: build on every change, release on a version tag.**
+- **`build.yml`.** It runs on `windows-latest` for pushes to `main` and for pull requests (documentation-only
+  changes are skipped). It builds and runs the unit tests in Release, publishes both trimmed single-file
+  executables, and keeps them for 14 days as a workflow artifact. Integration tests stay opt-in (D-20).
+- **`release.yml`.** It runs when a `vX.Y.Z` tag is pushed, or from "Run workflow" with a version number,
+  which then creates the tag on the commit it built. It builds, tests and publishes with that version, and
+  creates the GitHub release with:
+  - `QbtAutoUpdate-win-x64.exe` and `QbtAutoUpdate-win-arm64.exe`;
+  - `SHA256SUMS.txt` (`sha256sum` format);
+  - the matching `CHANGELOG.md` section as notes, plus a download and SmartScreen paragraph.
+- **Versions.** They are plain `X.Y.Z`: the exe compares its own version with the installed copy to offer
+  an upgrade, and pre-release suffixes would not compare. The tag sets the version, so
+  `Directory.Build.props` only matters for local builds.
+- **Stable file names.** The executables keep the same names from one release to the next, so
+  `releases/latest/download/QbtAutoUpdate-win-x64.exe` always works. Setup copies the exe to
+  `Program Files` under its fixed name anyway.
+- **No third-party actions.** Only `actions/checkout`, `actions/setup-dotnet` and `actions/upload-artifact`
+  are used, plus the `gh` CLI preinstalled on the runner. That leaves less supply-chain surface for the
+  workflow that produces the binaries.
+- **No code signing yet.** The README explains the SmartScreen warning, and SignPath Foundation is the
+  planned route (spec §9).

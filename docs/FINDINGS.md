@@ -505,6 +505,29 @@ Phase 4 additions:
   with `ToastNotificationManager.History.GetHistory('<AUMID>')`. The sandbox scenario uses it to check what
   was shown.
 
+## 8c. Other updaters, checked 2026-10-23 (README FAQ, spec §9)
+
+- ➕ **winget.** The package `qBittorrent.qBittorrent` 5.3.0 points at `qbittorrent_5.3.0_x64_setup.exe`,
+  the new default libtorrent 2.1 build (`nullsoft`, `Scope: machine`, `UpgradeBehavior: install`, SHA-256
+  in the manifest). Its 5.2.4 manifest pointed at `qbittorrent_5.2.4_x64_setup.exe`, which was libtorrent
+  1.2. An upgrade therefore moves a 5.2.x default install to libtorrent 2.x. Source:
+  `microsoft/winget-pkgs`, `manifests/q/qBittorrent/qBittorrent/`.
+- ➕ **winget lt2 package.** `qBittorrent.qBittorrent.lt2` (the `lt20` builds) has versions up to 5.2.4.
+  There is no libtorrent 1.2 package for 5.3.0.
+- ➕ **Winget-AutoUpdate** (Romanitho/Winget-AutoUpdate, active):
+  - It runs winget as SYSTEM, daily and at logon.
+  - Closing an app is left to per-app mod scripts (`<AppID>-preinstall.ps1`, ...).
+  - The provided helper `Stop-ModsProc` in `mods/_Mods-Functions.ps1` is
+    `Stop-Process -Name $process -Force`, a kill.
+- ➕ **UniGetUI** (Devolutions/UniGetUI, active). The per-package `KillBeforeOperation` list runs
+  `KillProcessOperation`, which:
+  - calls `CloseMainWindow()`, then waits 1 second;
+  - then calls `Kill(entireProcessTree: true)`, but only when forced or when the "kill processes that refuse
+    to die" setting is on.
+  `CloseMainWindow` posts `WM_CLOSE` to the main window. qBittorrent with *close to tray* only hides itself
+  on that message (§7.1), and a hidden window has no main window handle. Its "close running app and retry"
+  path uses `forceKill: true`.
+
 ## 9. Open items to validate empirically
 
 Done in phase 1: the offline variant heuristic was confirmed by the `Integration` tests. Both real 5.3.0
@@ -522,5 +545,5 @@ libtorrent 1.2, target `qbittorrent_5.3.0_lt12_x64_setup.exe`, signature valid.
 | 3 | Installer under SYSTEM: no UI, Public desktop shortcut removed then recreated, HKCU `Run` intact. | ✅ Sandbox |
 | 3 | Behaviour of an `/S` install when a file is locked (must never happen, but the post-check must catch it). | 🔬 not reproduced; the post-install version check would report it |
 | 4 | Toast library under .NET 10, single-file and trimming; activation after the process has exited. | ✅ No library (D-38): WinRT projection in the single-file exe, protocol activation after the check has exited (Sandbox runs 8–10). Trimming still to decide in phase 5 |
-| 5 | Current behaviour of winget, Winget-AutoUpdate and UniGetUI for qBittorrent (README FAQ). | open |
+| 5 | Current behaviour of winget, Winget-AutoUpdate and UniGetUI for qBittorrent (README FAQ). | ✅ §8c |
 | 5 | No UAC prompt after setup, no window flashing, on a PC with UAC on (Sandbox has UAC off). | open |

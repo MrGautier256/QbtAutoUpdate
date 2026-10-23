@@ -177,12 +177,48 @@ Automated suite: 397 passed, 4 integration tests skipped.
   get past the 24 h reminder delay.
 - Uninstall removed the notification registration and the protocol as well.
 
+### 2026-10-23: phase 5, trimmed executables, Windows Sandbox
+
+Trimming was switched on (D-05): 13.3 MB for x64 and 13.7 MB for ARM64, against about 45 MB before. The
+same scenarios ran on the trimmed exe:
+- **Run 11, "ui" variant: 66/66 PASS.** It covers the windows (TaskDialog), Task Scheduler and shell-link
+  COM, toasts and their history, protocol activation, the French resources, rollback and uninstall.
+- **Run 12, lt20 build: 56/56 PASS.** It covers auto mode end to end: Check task, download, the SYSTEM Apply
+  task, clean close and restart, the variant kept both ways, notify mode and buttons, a standard account,
+  a tampered installer.
+
+### Manual validation on a regular PC (UAC on)
+
+Windows Sandbox runs with UAC off, so these steps need a real PC or a VM, as a user who is an
+administrator with UAC on (the Windows default). Start with an official qBittorrent installed, one release
+behind the latest.
+
+1. Double-click `QbtAutoUpdate-win-x64.exe`. Expected:
+   - the SmartScreen warning ("More info", "Run anyway");
+   - the setup window;
+   - **exactly one** UAC prompt after clicking Install.
+2. Choose auto mode. Sign out and back in, or wait for the first check. Expected:
+   - qBittorrent closes, is updated and starts again;
+   - **no UAC prompt and no window flashing**;
+   - a "qBittorrent updated" notification.
+3. Repeat with a standard (non-administrator) account signed in, after the setup done by the
+   administrator. Expected: same result, with no prompt.
+4. Switch to notify mode in the settings window: one UAC prompt, since that is a machine setting. Install
+   an older qBittorrent again to have something to offer. Then:
+   - wait for the notification and click **Update now** on the toast itself;
+   - expected: the update runs with no prompt.
+5. Settings window, **Reinstall the previous version**: one UAC prompt, then the previous release in the
+   same libtorrent series.
+6. Uninstall from *Installed apps*. Expected: one UAC prompt, and nothing left except qBittorrent.
+
+Record the results here, including anything that differs.
+
 ### Not validated yet
 
 - **A long shutdown** (many torrents, tracker announces) and resume data checked torrent by torrent.
 - **The WebUI** shutdown path against a real qBittorrent.
 - **UAC prompts and flashing windows**: Windows Sandbox runs with UAC off, so "no prompt after setup" and
-  "no visible window" need a regular PC or VM with UAC on (phase 5). The same goes for the non-elevated
+  "no visible window" need a regular PC or VM with UAC on (checklist above). The same goes for the non-elevated
   path where a settings change relaunches the exe with "runas".
 - **A standard account running the whole update** in its own session (signed in interactively). Its parts
   are covered: inbox write, Apply task start, ACLs.

@@ -15,11 +15,16 @@
 
   <!-- Release artifacts: one self-contained file per architecture (dotnet publish -r win-x64).
        No IncludeNativeLibrariesForSelfExtract: the SYSTEM task must never load DLLs extracted to a
-       writable temp folder (docs/DECISIONS.md D-29). -->
+       writable temp folder (docs/DECISIONS.md D-29). Trimmed: about 13 MB instead of 45 (D-05). -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <!-- IL2104 only summarizes warnings inside WinRT.Runtime and Microsoft.Windows.SDK.NET (generic
+         collection and async marshalling fallbacks, unused here): kept visible, not fatal. Trim warnings
+         about this project's own code stay errors. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 

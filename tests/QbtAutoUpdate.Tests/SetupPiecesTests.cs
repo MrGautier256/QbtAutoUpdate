@@ -300,6 +300,12 @@ public sealed class AclTests : IDisposable
     [Fact]
     public void A_folder_created_by_a_user_or_a_junction_is_not_trusted()
     {
+        // Run elevated (as on CI runners), the folder would belong to Administrators: give it to the user.
+        var info = new DirectoryInfo(_dir);
+        DirectorySecurity owner = info.GetAccessControl(AccessControlSections.Owner);
+        owner.SetOwner(WindowsIdentity.GetCurrent().User!);
+        info.SetAccessControl(owner);
+
         Assert.False(Acl.IsTrustedDirectory(_dir)); // owned by the current user, not by Administrators/SYSTEM
         Assert.False(Acl.IsTrustedDirectory(Path.Combine(_dir, "missing")));
 

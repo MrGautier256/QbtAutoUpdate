@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'sandbox/**', 'tools/**', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'sandbox/**', 'tools/**', 'LICENSE']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      # Unit tests only: the integration tests (network, ~90 MB, 7-Zip) need QBTAU_INTEGRATION=1.
+      - name: Test
+        run: dotnet test --configuration Release --no-build
+
+      - name: Publish win-x64 and win-arm64
+        shell: pwsh
+        run: |
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish src/QbtAutoUpdate --configuration Release --runtime $rid --output "publish/$rid"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Get-ChildItem publish -Recurse -File | ForEach-Object { '{0}  {1:N1} MB' -f $_.FullName, ($_.Length / 1MB) }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: QbtAutoUpdate-${{ github.sha }}
+          path: publish/
+          retention-days: 14
