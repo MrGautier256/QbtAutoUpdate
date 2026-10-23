@@ -34,6 +34,9 @@ internal static class Program
         };
 
         using FlowContext context = FlowContext.Create(command);
+        // Nobody watches the scheduled check or a notification click: they report through notifications.
+        // A click always does, even when the shell that opened the link happened to have a console.
+        context.ToastsEnabled = command.Verb == "activate" || (!hasConsole && command.Verb is "check" or "update");
         context.Log.Info($"QbtAutoUpdate {SafeHttpClient.ProductVersion} '{command.Verb ?? "(window)"}'{(command.DryRun ? " --dry-run" : "")} as {Environment.UserName}"
                          + (Elevation.IsSystem ? " (SYSTEM)" : Elevation.IsElevated ? " (elevated)" : ""));
         try
@@ -51,6 +54,8 @@ internal static class Program
                 "config" => Task.FromResult(ConfigFlow.Run(context)),
                 "uninstall" => Task.FromResult(UninstallFlow.Run(context)),
                 "apply" => Task.FromResult(ApplyFlow.Run(context)),
+                "rollback" => RollbackFlow.RunAsync(context, cancellation.Token),
+                "activate" => ActivationFlow.RunAsync(context, cancellation.Token),
                 _ => Task.FromResult(NotAvailableYet(context, command.Verb)),
             };
             int exitCode = run.GetAwaiter().GetResult();

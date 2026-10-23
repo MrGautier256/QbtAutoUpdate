@@ -183,6 +183,15 @@ public class UpdatePlannerTests
     }
 
     [Fact]
+    public async Task A_version_held_back_by_rollback_is_skipped_for_every_user()
+    {
+        var config = new MachineConfig { SkippedVersion = QbtVersion.Parse("5.3.0") };
+
+        Assert.Equal(PlanOutcome.Skipped, (await Plan(config: config)).Outcome);
+        Assert.Equal(PlanOutcome.Ready, (await Plan(config: config, manual: true)).Outcome);
+    }
+
+    [Fact]
     public async Task Skipping_an_older_version_does_not_block_a_newer_one()
     {
         var user = new UserSettings { SkippedVersion = QbtVersion.Parse("5.2.9") };

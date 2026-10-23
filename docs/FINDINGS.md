@@ -466,7 +466,7 @@ tool will not edit it.
 | .NET SDK | 10.0.402 is installed on the development machine. |
 | `BouncyCastle.Cryptography` | 2.7.0 (2026-07-30), targets `net6.0`: compatible. |
 | `TaskScheduler` (dahall) | 2.12.2 (2025-07-08), latest asset `net9.0-windows7.0`: compatible with net10. Uses COM interop: check trimming warnings. |
-| `Microsoft.Toolkit.Uwp.Notifications` | 7.1.3, **last release 2022-11-01**, not deprecated but unmaintained. Assets include `net5.0-windows10.0.17763`, so it is usable from `net10.0-windows10.0.19041.0`. 🔬 Trimming and single-file behaviour to check with a spike in phase 4. Fallback: a small in-house implementation (WinRT `ToastNotificationManager` from the SDK projection, AUMID in the registry, COM activator). |
+| `Microsoft.Toolkit.Uwp.Notifications` | 7.1.3, **last release 2022-11-01**, not deprecated but unmaintained. Assets include `net5.0-windows10.0.17763`, so it is usable from `net10.0-windows10.0.19041.0`. **Not used** (D-38): QbtAutoUpdate calls the WinRT `ToastNotificationManager` from the SDK projection, registers an AUMID, and uses protocol activation instead of a COM activator. |
 | Windows App SDK | 2.5.x. Heavier: unpackaged use needs the runtime or self-contained deployment. Kept as last resort. |
 
 ---
@@ -487,6 +487,24 @@ tool will not edit it.
 - ➕ With UAC off, an "elevated" process is the normal state, so the restart goes through the shell-token path
   (`CreateProcessWithTokenW`). It worked: qBittorrent restarted in the user's session.
 
+Phase 4 additions:
+
+- ➕ **Console text and code pages.** A WinExe whose output is redirected has no console. .NET then encodes
+  in a single-byte fallback: "à" came out as `E0` and "→" as `?`. The shell reading the pipe decodes with its
+  console's code page: 850 on a French Windows, 65001 when set to UTF-8. Also, .NET encodes OEM code pages
+  such as 850 only once `CodePagesEncodingProvider` is registered.
+- ➕ **Fixing the redirected case.** QbtAutoUpdate now registers that provider and attaches to the parent
+  console even when output is redirected. `AttachConsole` replaces the redirected standard handles with
+  the console's: the output then went to the console and the file stayed empty. The handles are saved
+  before attaching and restored afterwards.
+- ➕ **Checked bytes.** Under `chcp 850`, "à" is written as `85`; under `chcp 65001`, as `C3 A0`; and a
+  PowerShell pipe decodes it correctly.
+- ➕ **Console strings stay ASCII-safe.** Console messages avoid characters missing from OEM code pages:
+  `...` instead of `…`, `->` instead of `→`, straight quotes.
+- ➕ **Toast history from PowerShell.** Windows PowerShell 5.1 reads an unpackaged app's notification history
+  with `ToastNotificationManager.History.GetHistory('<AUMID>')`. The sandbox scenario uses it to check what
+  was shown.
+
 ## 9. Open items to validate empirically
 
 Done in phase 1: the offline variant heuristic was confirmed by the `Integration` tests. Both real 5.3.0
@@ -503,6 +521,6 @@ libtorrent 1.2, target `qbittorrent_5.3.0_lt12_x64_setup.exe`, signature valid.
 | 3 | `apply` task security descriptor that lets non-admins call `IRegisteredTask.Run`. | ✅ Sandbox: a standard account started it with `schtasks /run` |
 | 3 | Installer under SYSTEM: no UI, Public desktop shortcut removed then recreated, HKCU `Run` intact. | ✅ Sandbox |
 | 3 | Behaviour of an `/S` install when a file is locked (must never happen, but the post-check must catch it). | 🔬 not reproduced; the post-install version check would report it |
-| 4 | Toast library under .NET 10, single-file and trimming; activation after the process has exited. | open |
+| 4 | Toast library under .NET 10, single-file and trimming; activation after the process has exited. | ✅ No library (D-38): WinRT projection in the single-file exe, protocol activation after the check has exited (Sandbox runs 8–10). Trimming still to decide in phase 5 |
 | 5 | Current behaviour of winget, Winget-AutoUpdate and UniGetUI for qBittorrent (README FAQ). | open |
 | 5 | No UAC prompt after setup, no window flashing, on a PC with UAC on (Sandbox has UAC off). | open |

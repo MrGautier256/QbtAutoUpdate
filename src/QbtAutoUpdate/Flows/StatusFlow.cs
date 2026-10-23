@@ -151,6 +151,9 @@ internal static class StatusFlow
         Row(o, "Automatic", config.Enabled ? $"on, every {config.CheckIntervalHours} h" : "off");
         Row(o, "Mode", config.Mode == UpdateMode.Auto ? "auto" : "notify");
         Row(o, "Variant", config.Variant switch { VariantSetting.Lt2 => "libtorrent 2.x (forced)", VariantSetting.Lt12 => "libtorrent 1.2 (forced)", _ => "keep the installed one" });
+        if (config.SkippedVersion is { } rolledBack)
+            Row(o, "Held back", $"{rolledBack} (rollback; clear with: config --skipped-version none)");
+        Row(o, "Notifications", config.Notifications switch { NotificationLevel.Errors => "errors only", NotificationLevel.None => "off", _ => "all" });
         Row(o, "Close timeout", $"{config.CloseTimeoutSeconds} s{(config.AllowForceClose ? ", then terminate (allowForceClose)" : "")}");
         Row(o, "Backup", config.BackupConfig ? $"settings{(config.BackupTorrents ? " and BT_backup" : "")}, last {ConfigBackup.Keep} kept in {paths.BackupsDir}" : "off");
         Row(o, "WebUI", user.WebUi is { } webUi ? $"{webUi.Url} ({webUi.AuthenticationKind})" : "not configured (Restart Manager only)");

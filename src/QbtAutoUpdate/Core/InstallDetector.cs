@@ -88,7 +88,7 @@ public sealed class InstallDetector(IInstallEnvironment environment)
 
         if (installDir is null)
         {
-            notes.Add("The registry has qBittorrent keys but no usable install location.");
+            notes.Add(T.Get("NoteNoInstallLocation"));
             return new InstallInfo { Kind = InstallKind.NotOfficial, RegistryView = view, RegistryVersion = registryVersion, Notes = notes };
         }
 
@@ -106,13 +106,13 @@ public sealed class InstallDetector(IInstallEnvironment environment)
 
         if (IsUnder(installDir, environment.ProgramFilesX86))
         {
-            notes.Add("32-bit installation in Program Files (x86): not supported, reinstall the 64-bit build.");
+            notes.Add(T.Get("NoteLegacy32"));
             return info with { Kind = InstallKind.Legacy32Bit };
         }
 
         if (!environment.FileExists(exePath))
         {
-            notes.Add("qbittorrent.exe is missing: the installation is incomplete and will be repaired by the next update.");
+            notes.Add(T.Get("NoteExeMissing"));
             return info with { ExeMissing = true };
         }
 
@@ -122,20 +122,20 @@ public sealed class InstallDetector(IInstallEnvironment environment)
 
         if (metadata.Machine == PeMachine.I386)
         {
-            notes.Add("qbittorrent.exe is a 32-bit binary: not supported, reinstall the 64-bit build.");
+            notes.Add(T.Get("NoteLegacy32"));
             return info with { Kind = InstallKind.Legacy32Bit };
         }
 
         if (metadata.FileVersion?.Build >= ForkBuildThreshold || scan.HasForkMarkers)
         {
-            notes.Add("This is qBittorrent Enhanced Edition, a fork that QbtAutoUpdate does not update.");
+            notes.Add(T.Get("NoteFork"));
             return info with { Kind = InstallKind.Fork };
         }
 
         if (!string.Equals(metadata.CompanyName, OfficialCompany, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(metadata.ProductName, OfficialProduct, StringComparison.OrdinalIgnoreCase))
         {
-            notes.Add($"qbittorrent.exe reports '{metadata.ProductName}' by '{metadata.CompanyName}': not the official build.");
+            notes.Add(T.Format("NoteNotOfficial", metadata.ProductName, metadata.CompanyName));
             return info with { Kind = InstallKind.NotOfficial };
         }
 
@@ -169,9 +169,7 @@ public sealed class InstallDetector(IInstallEnvironment environment)
                 InstallDir = dir,
                 ExePath = path,
                 HasPortableProfile = profile,
-                Notes = [profile
-                    ? "Portable qBittorrent (profile folder, no registry keys): not supported in this version."
-                    : "qBittorrent runs from a folder that no installer registered: not supported."],
+                Notes = [T.Get(profile ? "NotePortable" : "NoteUnregistered")],
             };
         }
 
@@ -183,7 +181,7 @@ public sealed class InstallDetector(IInstallEnvironment environment)
                 Kind = InstallKind.Legacy32Bit,
                 InstallDir = Path.GetDirectoryName(legacyExe),
                 ExePath = legacyExe,
-                Notes = ["32-bit installation in Program Files (x86): not supported, reinstall the 64-bit build."],
+                Notes = [T.Get("NoteLegacy32")],
             };
         }
 

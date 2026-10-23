@@ -47,16 +47,8 @@ public static class NsisExitCodes
 {
     public static string Describe(int code) => code switch
     {
-        0 => "success",
-        1 => "the installation was cancelled",
-        2 => "the installer script aborted",
-        1654 => "the installer refused this system (Windows 10 1809 or later, 64-bit, and a matching architecture are required)",
-        1223 => "the administrator prompt was cancelled",
-        1314 => "administrator privileges are missing",
-        1603 => "the installer could not elevate",
-        1062 => "the Windows logon service is not running",
-        15618 => "qBittorrent was running",
-        _ => $"unknown exit code {code}",
+        0 or 1 or 2 or 1654 or 1223 or 1314 or 1603 or 1062 or 15618 => T.Get("Nsis" + code.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        _ => T.Format("NsisUnknown", code),
     };
 }
 
@@ -76,7 +68,8 @@ public sealed partial class InstallerRunner(
 {
     public static readonly TimeSpan InstallerTimeout = TimeSpan.FromMinutes(15);
 
-    public InstallOutcome Install(InstallerFile file, InstallInfo before, Variant expectedVariant)
+    /// <param name="allowDowngrade">Only for "rollback", run by an administrator: an older version is accepted.</param>
+    public InstallOutcome Install(InstallerFile file, InstallInfo before, Variant expectedVariant, bool allowDowngrade = false)
     {
         if (ParseInstallerName(file.FileName) is not { } parsed)
             return Refuse($"'{file.FileName}' is not a known qBittorrent installer name.");
@@ -92,7 +85,7 @@ public sealed partial class InstallerRunner(
 
         if (before.Version is { } installed)
         {
-            if (version < installed)
+            if (version < installed && !allowDowngrade)
                 return Refuse($"{version} is older than the installed {installed}; downgrades only happen through 'rollback'.");
             if (version == installed && !before.IsInconsistent)
                 return Refuse($"{version} is already installed.");
@@ -112,8 +105,7 @@ public sealed partial class InstallerRunner(
         IReadOnlyList<QbtProcess> running = runningQbittorrent();
         if (running.Count > 0)
         {
-            return new InstallOutcome(InstallStatus.Busy,
-                $"qBittorrent is running (PID {string.Join(", ", running.Select(p => p.Id))}); the installation will be retried later.");
+            return new InstallOutcome(InstallStatus.Busy, T.Format("InstBusy", string.Join(", ", running.Select(p => p.Id))));
         }
 
         // NSIS silent mode skips check_instance: the check above is the only protection.
@@ -121,29 +113,29 @@ public sealed partial class InstallerRunner(
         log.Info($"Running {file.FileName} {arguments}");
         int? exitCode = installer.Run(file.Path, arguments, InstallerTimeout);
         if (exitCode is null)
-            return new InstallOutcome(InstallStatus.InstallerFailed, $"The installer did not finish within {InstallerTimeout.TotalMinutes:0} minutes.");
+            return new InstallOutcome(InstallStatus.InstallerFailed, T.Format("InstTimeout", InstallerTimeout.TotalMinutes));
         if (exitCode != 0)
-            return new InstallOutcome(InstallStatus.InstallerFailed, $"The installer failed: {NsisExitCodes.Describe(exitCode.Value)}.", exitCode);
+            return new InstallOutcome(InstallStatus.InstallerFailed, T.Format("InstFailed", NsisExitCodes.Describe(exitCode.Value)), exitCode);
 
         InstallInfo after = new InstallDetector(environment).Detect();
         if (after.Kind != InstallKind.Installed || after.ExeMissing || after.FileVersion != version || after.RegistryVersion != version)
         {
             return new InstallOutcome(InstallStatus.NotVerified,
-                $"The installer reported success, but qBittorrent now reports {after.FileVersion?.ToString() ?? "no version"} (registry {after.RegistryVersion?.ToString() ?? "none"}) instead of {version}.",
+                T.Format("InstNotVerified", after.FileVersion?.ToString() ?? "?", after.RegistryVersion?.ToString() ?? "?", version),
                 exitCode, after);
         }
         if (after.DetectedVariant is { } detected && detected != expectedVariant)
         {
             return new InstallOutcome(InstallStatus.NotVerified,
-                $"qBittorrent {version} is installed but is {detected.Describe()} instead of {expectedVariant.Describe()}.", exitCode, after);
+                T.Format("InstWrongVariant", version, detected.Describe(), expectedVariant.Describe()), exitCode, after);
         }
 
-        return new InstallOutcome(InstallStatus.Installed, $"qBittorrent {version} ({expectedVariant.Describe()}) installed.", exitCode, after);
+        return new InstallOutcome(InstallStatus.Installed, T.Format("InstInstalled", version, expectedVariant.Describe()), exitCode, after);
 
         InstallOutcome Refuse(string message)
         {
             log.Error("Installer refused: " + message);
-            return new InstallOutcome(InstallStatus.Refused, message);
+            return new InstallOutcome(InstallStatus.Refused, T.Format("InstRefused", message));
         }
     }
 

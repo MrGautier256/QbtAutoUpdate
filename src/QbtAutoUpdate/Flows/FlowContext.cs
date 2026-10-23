@@ -47,6 +47,52 @@ internal sealed class FlowContext : IDisposable
     /// <summary>Stops writing the log file (uninstall deletes the folder it lives in).</summary>
     public void StopFileLogging() => _fileLog.Enabled = false;
 
+    /// <summary>
+    /// True for runs nobody watches (the scheduled check, a notification click): their results are
+    /// reported as Windows notifications. Terminal and window runs show them themselves.
+    /// </summary>
+    public bool ToastsEnabled { get; set; }
+
+    public void NotifyAvailable(MachineConfig config, UserSettings user, UpdatePlan plan) =>
+        Toast(config, isError: false, always: true, "available",
+            () => ToastContent.Available(plan.Latest!.Version, plan.Install.Version, plan.Variant!.Value, TokenFor(user)));
+
+    public void NotifyUpdated(MachineConfig config, QbtVersion version, Variant variant) =>
+        Toast(config, isError: false, always: false, "result", () => ToastContent.Updated(version, variant));
+
+    public void NotifyFailure(MachineConfig config, UserSettings user, string message) =>
+        Toast(config, isError: true, always: false, "result", () => ToastContent.Failed(message, TokenFor(user)));
+
+    public void NotifyCloseFailed(MachineConfig config, UserSettings user, QbtVersion target, string reason) =>
+        Toast(config, isError: true, always: false, "result", () => ToastContent.CloseFailed(target, reason, TokenFor(user)));
+
+    public void NotifyInfo(MachineConfig config, string title, string message) =>
+        Toast(config, isError: false, always: true, "result", () => ToastContent.Info(title, message));
+
+    /// <param name="always">Shown unless notifications are off: the "available" notification is what notify mode is for.</param>
+    private void Toast(MachineConfig config, bool isError, bool always, string tag, Func<string> xml)
+    {
+        if (!ToastsEnabled || config.Notifications == NotificationLevel.None)
+            return;
+        if (config.Notifications == NotificationLevel.Errors && !isError && !always)
+            return;
+        Toasts.Show(xml(), tag, Paths, Log);
+    }
+
+    /// <summary>The user's notification secret, created and saved on first use.</summary>
+    public string TokenFor(UserSettings user)
+    {
+        if (!string.IsNullOrEmpty(user.NotificationToken))
+            return user.NotificationToken;
+        UserSettings current = UserSettings.Load(Paths.UserConfigFile, []);
+        if (string.IsNullOrEmpty(current.NotificationToken))
+        {
+            current = current with { NotificationToken = ToastAction.NewToken() };
+            current.Save(Paths.UserConfigFile);
+        }
+        return current.NotificationToken!;
+    }
+
     /// <summary>Detects qBittorrent, including an install interrupted by a power cut (state.json).</summary>
     public InstallInfo DetectInstall(UpdateState state) =>
         InstallInfoRecovery.Recover(new InstallDetector(new SystemInstallEnvironment()).Detect(), state);

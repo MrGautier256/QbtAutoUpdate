@@ -61,15 +61,15 @@ public sealed class QbtCloser(ILog log, Func<WebUiClient?> webUiFactory)
         switch (instance.Access)
         {
             case QbtAccess.Elevated:
-                return Result(false, null, $"qBittorrent (PID {instance.Id}) runs as administrator; QbtAutoUpdate cannot close it. Close it yourself, or start it normally.");
+                return Result(false, null, T.Format("CloseElevated", instance.Id));
             case QbtAccess.OtherUser:
-                return Result(false, null, $"qBittorrent (PID {instance.Id}) belongs to another user.");
+                return Result(false, null, T.Format("CloseOtherUser", instance.Id));
             case QbtAccess.Unreadable:
-                return Result(false, null, $"qBittorrent (PID {instance.Id}) could not be inspected.");
+                return Result(false, null, T.Format("CloseUnreadable", instance.Id));
         }
 
         if (instance.HasExited)
-            return Result(true, CloseMethod.AlreadyExited, $"qBittorrent (PID {instance.Id}) had already exited.");
+            return Result(true, CloseMethod.AlreadyExited, T.Format("CloseAlreadyExited", instance.Id));
 
         bool webUiAccepted = false;
         if (useWebUi)
@@ -93,23 +93,23 @@ public sealed class QbtCloser(ILog log, Func<WebUiClient?> webUiFactory)
         if (webUiAccepted)
         {
             if (await instance.WaitForExitAsync(Left(), cancellationToken).ConfigureAwait(false))
-                return Result(true, CloseMethod.WebUi, $"qBittorrent closed through its WebUI in {clock.Elapsed.TotalSeconds:0} s.");
+                return Result(true, CloseMethod.WebUi, T.Format("CloseWebUi", Math.Round(clock.Elapsed.TotalSeconds)));
         }
         else
         {
             RestartManagerResult requested = await Task.Run(() => instance.RequestClose(Left()), cancellationToken).ConfigureAwait(false);
             log.Info($"Restart Manager result for PID {instance.Id}: {requested}.");
             if (await instance.WaitForExitAsync(Left(), cancellationToken).ConfigureAwait(false))
-                return Result(true, CloseMethod.RestartManager, $"qBittorrent closed cleanly in {clock.Elapsed.TotalSeconds:0} s.");
+                return Result(true, CloseMethod.RestartManager, T.Format("CloseClean", Math.Round(clock.Elapsed.TotalSeconds)));
         }
 
         if (allowForceClose)
         {
             log.Warn($"qBittorrent (PID {instance.Id}) did not exit within {timeout.TotalSeconds:0} s; allowForceClose is on, terminating it.");
             if (instance.Kill() && await instance.WaitForExitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false))
-                return Result(true, CloseMethod.Killed, "qBittorrent did not close in time and was terminated (allowForceClose).");
+                return Result(true, CloseMethod.Killed, T.Get("CloseKilled"));
         }
 
-        return Result(false, null, $"qBittorrent did not close within {timeout.TotalSeconds:0} s. Close qBittorrent to finish the update.");
+        return Result(false, null, T.Format("CloseTimeout", Math.Round(timeout.TotalSeconds)));
     }
 }

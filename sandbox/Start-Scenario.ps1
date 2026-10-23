@@ -7,8 +7,9 @@
     writes a .wsb file and starts Windows Sandbox. Inside, Run-Scenario.ps1 installs qBittorrent,
     configures it the hard way (minimized to tray, close to tray, confirm on exit, start with Windows,
     Public desktop shortcut, an active torrent), sets QbtAutoUpdate up in auto mode, waits for the update,
-    checks the result, repeats key checks as a standard user, uninstalls, writes summary.txt to the
-    results folder and shuts the sandbox down.
+    checks the result, rolls back, checks that the rolled-back version is held back, switches to notify
+    mode and drives the notification and its buttons, repeats key checks as a standard user, uninstalls,
+    writes summary.txt to the results folder and shuts the sandbox down.
 
 .EXAMPLE
     .\sandbox\Start-Scenario.ps1 -Variant default

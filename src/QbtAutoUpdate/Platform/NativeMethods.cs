@@ -7,6 +7,7 @@ internal static partial class NativeMethods
 {
     internal const int ATTACH_PARENT_PROCESS = -1;
     internal const int STD_OUTPUT_HANDLE = -11;
+    internal const int STD_ERROR_HANDLE = -12;
 
     internal const uint PROCESS_QUERY_INFORMATION = 0x0400;
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
@@ -41,6 +42,10 @@ internal static partial class NativeMethods
 
     [LibraryImport("kernel32.dll")]
     internal static partial nint GetStdHandle(int stdHandle);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetStdHandle(int stdHandle, nint handle);
 
     // ---- Processes ----
 

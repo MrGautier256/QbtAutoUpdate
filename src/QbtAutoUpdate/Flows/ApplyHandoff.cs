@@ -45,10 +45,10 @@ internal static class ApplyHandoff
         {
             TryDelete(installer);
             TryDelete(signature);
-            return new InstallOutcome(InstallStatus.InstallerFailed, $"Could not hand the installer over to the update task: {ex.Message}");
+            return new InstallOutcome(InstallStatus.InstallerFailed, T.Format("UpdHandOverFailed", ex.Message));
         }
 
-        context.Say("Installing (QbtAutoUpdate's system task)...");
+        context.Say(T.Get("UpdInstallingTask"));
         DateTime started = DateTime.UtcNow;
         tasks.Run(ScheduledTasks.ApplyTask);
 
@@ -60,7 +60,7 @@ internal static class ApplyHandoff
             TryDelete(signature);
             int lastResult = tasks.GetInfo(ScheduledTasks.ApplyTask)?.LastResult ?? 0;
             return new InstallOutcome(InstallStatus.InstallerFailed,
-                $"The update task did not answer (last result 0x{lastResult:X8}). See {context.Paths.MachineLogsDir}.");
+                T.Format("UpdNoAnswer", lastResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture), context.Paths.MachineLogsDir));
         }
 
         InstallStatus status = ApplyService.StatusFromResult(answer.Result) ?? InstallStatus.InstallerFailed;

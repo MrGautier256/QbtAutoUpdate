@@ -46,6 +46,35 @@ public sealed partial class SourceForgeClient(SafeHttpClient http, ILog log)
     public static Uri ChangelogUrl(QbtVersion version) =>
         new($"https://sourceforge.net/projects/qbittorrent/files/qbittorrent-win32/qbittorrent-{version}/README/download");
 
+    public static readonly Uri ReleasesRssUrl = new("https://sourceforge.net/projects/qbittorrent/rss?path=/qbittorrent-win32");
+
+    /// <summary>Stable versions with a folder among the latest uploads (about the last twenty releases).</summary>
+    public async Task<IReadOnlyList<QbtVersion>> ListReleasesAsync(CancellationToken cancellationToken)
+    {
+        string rss = await http.GetStringAsync(ReleasesRssUrl, MaxListingBytes, Timeout, cancellationToken).ConfigureAwait(false);
+        return ParseReleaseVersions(rss);
+    }
+
+    internal static List<QbtVersion> ParseReleaseVersions(string xml)
+    {
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        using var reader = XmlReader.Create(new StringReader(xml), settings);
+        XDocument document = XDocument.Load(reader);
+        const string Prefix = "/qbittorrent-win32/qbittorrent-";
+        var versions = new SortedSet<QbtVersion>();
+        foreach (XElement item in document.Root?.Element("channel")?.Elements("item") ?? [])
+        {
+            string? title = item.Element("title")?.Value.Trim();
+            if (title is null || !title.StartsWith(Prefix, StringComparison.Ordinal))
+                continue;
+            string folder = title[Prefix.Length..].Split('/')[0];
+            // Pre-releases ("5.3.0rc1") do not parse and are left out.
+            if (QbtVersion.TryParse(folder, out QbtVersion version))
+                versions.Add(version);
+        }
+        return [.. versions];
+    }
+
     public async Task<FolderListing> ListAsync(QbtVersion version, CancellationToken cancellationToken)
     {
         try

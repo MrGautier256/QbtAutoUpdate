@@ -3,10 +3,14 @@ using QbtAutoUpdate.Core;
 namespace QbtAutoUpdate.Flows;
 
 /// <summary>
-/// The scheduled check: compare versions, then update (auto mode) or offer the update (notify mode).
+/// The scheduled check: compare versions, then update (auto mode) or offer the update with a
+/// notification (notify mode).
 /// </summary>
 internal static class CheckFlow
 {
+    /// <summary>An unanswered "available" notification is shown again after this long.</summary>
+    private static readonly TimeSpan RemindAfter = TimeSpan.FromHours(24);
+
     public static async Task<int> RunAsync(FlowContext context, CancellationToken cancellationToken)
     {
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
@@ -16,17 +20,35 @@ internal static class CheckFlow
             .ConfigureAwait(false);
 
         context.Say(plan.Message);
+
+        // A release without our variant: say it once per version, install nothing.
+        if (plan.Outcome == PlanOutcome.VariantMissing && !AlreadyNotified(user, plan.Latest!.Version))
+        {
+            context.NotifyFailure(config, user, plan.Message);
+            Remember(context, plan.Latest.Version);
+        }
+
         if (!plan.IsReady)
             return ExitCodeFor(plan.Outcome);
 
         if (config.Mode == UpdateMode.Auto)
             return await UpdateFlow.ExecuteAsync(context, plan, config, user, cancellationToken).ConfigureAwait(false);
 
-        // Notifications arrive in phase 4.
-        context.Say(context.Command.DryRun
-            ? $"[dry-run] Notify mode: would show \"qBittorrent {plan.Latest!.Version} is available\" with Update now / Later / Skip this version."
-            : "Notify mode: notifications are not available in this build yet.");
-        return context.Command.DryRun ? ExitCodes.Ok : ExitCodes.NotAvailableYet;
+        QbtVersion target = plan.Latest!.Version;
+        if (context.Command.DryRun)
+        {
+            context.Say($"[dry-run] Notify mode: would show \"qBittorrent {target} is available\" with Update now / Later / Skip this version.");
+            return ExitCodes.Ok;
+        }
+        if (AlreadyNotified(user, target))
+        {
+            context.Log.Info($"qBittorrent {target} was already announced at {user.NotifiedAt:u}; not repeating it yet.");
+            return ExitCodes.Ok;
+        }
+
+        context.NotifyAvailable(config, user, plan);
+        Remember(context, target);
+        return ExitCodes.Ok;
     }
 
     /// <summary>Waiting states are normal outcomes (0); only real problems get a non-zero code.</summary>
@@ -36,4 +58,16 @@ internal static class CheckFlow
         PlanOutcome.VariantUnknown => ExitCodes.Unsupported,
         _ => ExitCodes.Ok,
     };
+
+    private static bool AlreadyNotified(UserSettings user, QbtVersion version) =>
+        user.NotifiedVersion == version && user.NotifiedAt > DateTimeOffset.Now - RemindAfter;
+
+    private static void Remember(FlowContext context, QbtVersion version)
+    {
+        if (!context.ToastsEnabled)
+            return;
+        // Reloaded: TokenFor may just have written the file.
+        UserSettings current = UserSettings.Load(context.Paths.UserConfigFile, []);
+        (current with { NotifiedVersion = version, NotifiedAt = DateTimeOffset.Now }).Save(context.Paths.UserConfigFile);
+    }
 }

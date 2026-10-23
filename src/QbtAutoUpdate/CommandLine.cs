@@ -18,7 +18,7 @@ internal sealed record CommandLine(
     {
         ["setup"] = new() { ["--mode"] = true, ["--interval"] = true, ["--variant"] = true, ["--quiet"] = false },
         ["uninstall"] = new() { ["--keep-logs"] = false, ["--quiet"] = false },
-        ["config"] = new() { ["--enabled"] = true, ["--mode"] = true, ["--interval"] = true, ["--variant"] = true },
+        ["config"] = new() { ["--enabled"] = true, ["--mode"] = true, ["--interval"] = true, ["--variant"] = true, ["--skipped-version"] = true },
         ["webui"] = new()
         {
             ["--url"] = true, ["--api-key"] = true, ["--username"] = true, ["--password"] = true,
@@ -61,6 +61,14 @@ internal sealed record CommandLine(
         string first = args[0];
         if (first is "-h" or "-?" or "/?" or "--help")
             return new CommandLine("help", false, false, true, new Dictionary<string, string?>(), null);
+
+        // A notification button: Windows passes the "qbtautoupdate:" URI alone (registered by setup).
+        if (first.StartsWith(Core.ToastContent.Scheme + ":", StringComparison.OrdinalIgnoreCase))
+        {
+            return args.Count == 1
+                ? new CommandLine("activate", false, false, false, new Dictionary<string, string?> { ["--uri"] = first }, null)
+                : Fail("activate", "A notification action takes no other argument.");
+        }
 
         string verb = first.ToLowerInvariant();
         if (!Verbs.Contains(verb))
@@ -141,9 +149,11 @@ internal sealed record CommandLine(
           uninstall   Remove QbtAutoUpdate (administrator).  --keep-logs  --quiet
           config      Change settings (administrator); without options, show them.
                         --enabled on|off  --mode auto|notify  --interval <hours>  --variant auto|lt2|lt12
+                        --skipped-version <version>|none   (set by rollback: automatic runs skip it)
 
         Without a command (double-click), opens the setup window, or the settings window once installed.
-          rollback    Reinstall the previous qBittorrent release (administrator).
+          rollback    Reinstall the release before the installed one, same libtorrent series (administrator).
+                      Automatic updates then skip the version that was rolled back.
           restart     Close qBittorrent the way an update does and start it again (diagnostic).
           webui       Optional access to qBittorrent's WebUI, for this Windows user.
                         --url http://localhost:8080  --api-key <key>|-  --username <name> --password <pw>|-

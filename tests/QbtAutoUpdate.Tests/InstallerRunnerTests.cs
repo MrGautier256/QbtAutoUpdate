@@ -30,11 +30,11 @@ public sealed class InstallerRunnerTests : IClassFixture<PgpKeys>, IDisposable
         return new InstallerFile(path, path + ".asc", name);
     }
 
-    private InstallOutcome Install(InstallerFile file, Variant expected = Variant.Lt12, IReadOnlyList<QbtProcess>? running = null, CpuArch machine = CpuArch.X64)
+    private InstallOutcome Install(InstallerFile file, Variant expected = Variant.Lt12, IReadOnlyList<QbtProcess>? running = null, CpuArch machine = CpuArch.X64, bool allowDowngrade = false)
     {
         InstallInfo before = new InstallDetector(_environment).Detect();
         var runner = new InstallerRunner(_keys.Signer.Verifier(), _environment, NullLog.Instance, () => running ?? [], _installer, machine, () => DateTimeOffset.UtcNow);
-        return runner.Install(file, before, expected);
+        return runner.Install(file, before, expected, allowDowngrade);
     }
 
     [Fact]
@@ -77,6 +77,21 @@ public sealed class InstallerRunnerTests : IClassFixture<PgpKeys>, IDisposable
     {
         Assert.Equal(InstallStatus.Refused, Install(Signed(name, version)).Status);
         Assert.Empty(_installer.Calls);
+    }
+
+    [Fact]
+    public void Rollback_installs_an_older_version_but_still_checks_everything_else()
+    {
+        _installer.InstalledVersion = "5.2.3";
+
+        Assert.Equal(InstallStatus.Refused, Install(Signed("qbittorrent_5.2.3_x64_setup.exe", "5.2.3", signer: _keys.Other), allowDowngrade: true).Status);
+        Assert.Equal(InstallStatus.Refused, Install(Signed("qbittorrent_5.2.4_x64_setup.exe", "5.2.4"), allowDowngrade: true).Status);
+        Assert.Empty(_installer.Calls);
+
+        InstallOutcome outcome = Install(Signed("qbittorrent_5.2.3_x64_setup.exe", "5.2.3"), allowDowngrade: true);
+
+        Assert.Equal(InstallStatus.Installed, outcome.Status);
+        Assert.Equal(QbtVersion.Parse("5.2.3"), outcome.After!.Version);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace QbtAutoUpdate.Core;
 
 public enum PlanOutcome
@@ -52,16 +54,16 @@ public sealed class UpdatePlanner(
         PlanOptions options, CancellationToken cancellationToken)
     {
         if (!config.Enabled && !options.Manual)
-            return new UpdatePlan(PlanOutcome.Disabled, "Automatic updates are turned off.", install);
+            return new UpdatePlan(PlanOutcome.Disabled, T.Get("PlanDisabled"), install);
 
         if (!install.IsSupported)
             return new UpdatePlan(PlanOutcome.Unsupported, DescribeUnsupported(install), install);
 
         if (install.Version is not { } installed)
-            return new UpdatePlan(PlanOutcome.Unsupported, "The installed qBittorrent version could not be read.", install);
+            return new UpdatePlan(PlanOutcome.Unsupported, T.Get("PlanVersionUnreadable"), install);
 
         if (config.SkipOnMeteredConnection && !options.Manual && isMetered())
-            return new UpdatePlan(PlanOutcome.Metered, "The connection is metered; the check is postponed.", install);
+            return new UpdatePlan(PlanOutcome.Metered, T.Get("PlanMetered"), install);
 
         LatestVersion latest = await versions.GetLatestAsync(cancellationToken).ConfigureAwait(false);
         QbtVersion target = latest.Version;
@@ -69,23 +71,23 @@ public sealed class UpdatePlanner(
         if (target < installed)
         {
             return new UpdatePlan(PlanOutcome.InstalledNewer,
-                $"The installed version {installed} is newer than the latest release {target} (beta or development build?).", install, latest);
+                T.Format("PlanInstalledNewer", installed, target), install, latest);
         }
 
         if (target == installed && !install.IsInconsistent)
-            return new UpdatePlan(PlanOutcome.UpToDate, $"qBittorrent {installed} is up to date.", install, latest);
+            return new UpdatePlan(PlanOutcome.UpToDate, T.Format("PlanUpToDate", installed), install, latest);
 
-        if (!options.Manual && user.SkippedVersion == target)
-            return new UpdatePlan(PlanOutcome.Skipped, $"Version {target} was skipped by the user.", install, latest);
+        // Skipped by the user (notification) or machine-wide by a rollback: automatic runs leave it alone.
+        if (!options.Manual && (user.SkippedVersion == target || config.SkippedVersion == target))
+            return new UpdatePlan(PlanOutcome.Skipped, T.Format("PlanSkipped", target), install, latest);
 
         DateTimeOffset now = clock();
         if (!options.Manual && user.SnoozeUntil > now)
-            return new UpdatePlan(PlanOutcome.Snoozed, $"Reminder postponed until {user.SnoozeUntil:yyyy-MM-dd HH:mm}.", install, latest);
+            return new UpdatePlan(PlanOutcome.Snoozed, T.Format("PlanSnoozed", user.SnoozeUntil.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)), install, latest);
 
         if (await DecideVariantAsync(config, install, state, cancellationToken).ConfigureAwait(false) is not { } decision)
         {
-            return new UpdatePlan(PlanOutcome.VariantUnknown,
-                "The libtorrent series of the installed qBittorrent is unknown; choose it in the settings (lt2 or lt12).", install, latest);
+            return new UpdatePlan(PlanOutcome.VariantUnknown, T.Get("PlanVariantUnknown"), install, latest);
         }
 
         FolderListing listing = await sourceForge.ListAsync(target, cancellationToken).ConfigureAwait(false);
@@ -97,9 +99,9 @@ public sealed class UpdatePlanner(
         switch (release.Status)
         {
             case ResolveStatus.NotYetAvailable:
-                return plan with { Outcome = PlanOutcome.NotYetAvailable, Message = $"qBittorrent {target} is announced but not downloadable yet: {release.Reason}." };
+                return plan with { Outcome = PlanOutcome.NotYetAvailable, Message = T.Format("PlanNotYetAvailable", target, release.Reason) };
             case ResolveStatus.VariantMissing:
-                return plan with { Outcome = PlanOutcome.VariantMissing, Message = $"qBittorrent {target} is out, but {release.Reason}. Nothing will be installed." };
+                return plan with { Outcome = PlanOutcome.VariantMissing, Message = T.Format("PlanVariantMissing", target, decision.Variant.Describe()) };
         }
 
         if (config.MinReleaseAgeHours > 0 && !options.Manual)
@@ -107,17 +109,17 @@ public sealed class UpdatePlanner(
             DateTimeOffset? published = release.Installer!.Published;
             if (published is null || published.Value.AddHours(config.MinReleaseAgeHours) > now)
             {
-                string when = published is null ? "unknown" : $"{published.Value.ToUniversalTime():yyyy-MM-dd HH:mm} UTC";
-                return plan with
-                {
-                    Outcome = PlanOutcome.TooRecent,
-                    Message = $"qBittorrent {target} was published {when}; waiting {config.MinReleaseAgeHours} h before installing it.",
-                };
+                string when = published is null ? T.Get("PlanPublishedUnknown") : published.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+                return plan with { Outcome = PlanOutcome.TooRecent, Message = T.Format("PlanTooRecent", target, when, config.MinReleaseAgeHours) };
             }
         }
 
-        string action = target == installed ? "Reinstall" : "Update";
-        return plan with { Message = $"{action} available: {installed} -> {target} ({decision.Variant.Describe()}, {release.Installer!.Name})." };
+        return plan with
+        {
+            Message = target == installed
+                ? T.Format("PlanReinstallAvailable", target, decision.Variant.Describe(), release.Installer!.Name)
+                : T.Format("PlanUpdateAvailable", installed, target, decision.Variant.Describe(), release.Installer!.Name),
+        };
     }
 
     /// <summary>
@@ -160,7 +162,7 @@ public sealed class UpdatePlanner(
 
     private static string DescribeUnsupported(InstallInfo install) => install.Kind switch
     {
-        InstallKind.NotInstalled => "qBittorrent is not installed.",
-        _ => install.Notes.Count > 0 ? install.Notes[0] : $"Unsupported installation ({install.Kind}).",
+        InstallKind.NotInstalled => T.Get("PlanNotInstalled"),
+        _ => install.Notes.Count > 0 ? install.Notes[0] : T.Get("PlanUnsupported"),
     };
 }

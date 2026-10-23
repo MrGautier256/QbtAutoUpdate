@@ -1,8 +1,8 @@
 # Testing
 
 What has been tested, how, and what actually happened, including what does not work yet.
-The Windows Sandbox end-to-end scenario (spec §8) is added in phase 5. Until then this file records the
-automated suite and the manual runs.
+It covers the automated suite, the manual runs, and the Windows Sandbox end-to-end scenario
+(spec §8, `sandbox\`).
 
 ## Automated tests
 
@@ -21,14 +21,18 @@ QBTAU_INTEGRATION=1 dotnet test          # also run the integration tests (netwo
 | PGP | test keys generated at run time: valid, altered file, other key, SHA-1, text signature, expired key, revoked key, several signatures, garbage; real 5.3.0 signatures bound to the pinned key |
 | Detection | registry views, file vs registry version, missing exe, fork by version and by strings, other products, 32-bit, portable |
 | Variant scan | markers of all real builds, look-alikes found in real binaries, chunk boundaries, contradictions |
-| Planning | every gate (off switch, metered, skip, snooze, minimum age), variant sources and their order, repair of an inconsistent install, no downgrade |
+| Planning | every gate (off switch, metered, skip, snooze, minimum age, version held back by rollback), variant sources and their order, repair of an inconsistent install, no downgrade |
 | Settings | defaults, per-field fallback, corrupt files, round trips, DPAPI-encrypted WebUI secrets |
 | Command line (QbtAutoUpdate) | verbs, options, `apply` accepting no argument |
 | Command line (qBittorrent) | the real "double-clicked .torrent" case, the Run key form, instance vs torrent options, unquoting, profile location (default, named, custom, portable, relative) |
 | Quoting | round trip through `CommandLineToArgvW`; reading a live process's command line |
 | Closing | Restart Manager path, WebUI path and fallback, never killing by default, `allowForceClose`, elevated / other user / unreadable processes |
 | Backup | file selection on a copy of a real profile layout, BT_backup zip, several profiles, keeping 3, same-second collisions |
-| Installing | final checks (name, signature, version resource, downgrade, same version, variant, architecture), busy, NSIS exit codes, timeout, post-install version and variant checks |
+| Installing | final checks (name, signature, version resource, downgrade, same version, variant, architecture), busy, NSIS exit codes, timeout, post-install version and variant checks; rollback lifts only the downgrade check |
+| Tasks, inbox, ACLs | task XML (principals, triggers, SDDL), inbox names and hostile content, data folder trust checks, `config` changes, recovery of an interrupted install; live Task Scheduler read and `.lnk` round trip |
+| Notifications | toast XML (texts, escaping, protocol buttons with version and token), `qbtautoupdate:` link parsing, rejection of unknown actions and missing or wrong tokens |
+| Localization | every English string translated to French with the same placeholders, every key used by the code present, French on a French Windows and English elsewhere |
+| Rollback | previous stable release from the real SourceForge root feed, libtorrent series kept across the 5.3.0 naming change, `config --skipped-version` |
 
 Integration tests (opt-in): latest release resolvable for both variants; both real 5.3.0 installers downloaded, verified with the
 real key, unpacked with 7-Zip, and their libtorrent series read correctly; detection of the locally installed qBittorrent.
@@ -127,6 +131,52 @@ ACLs as applied (from `icacls`):
 - `work`: SYSTEM and Administrators only.
 - `Program Files\QbtAutoUpdate`: inherits Program Files.
 
+### 2026-10-23: phase 4, Windows Sandbox (French display language)
+
+The scenario gained these steps after the update (see `sandbox\README.md`):
+- rollback;
+- a scheduled check with the rolled-back version held back;
+- notify mode, with its notification and throttling;
+- the notification buttons opened as `qbtautoupdate:` links.
+
+The dialog texts are matched in English or French, since the windows are now translated.
+Automated suite: 397 passed, 4 integration tests skipped.
+
+**Run 8: default build: 55/56 PASS.**
+- **Rollback.** `rollback` took 5.3.0 lt12 back to the 5.2.4 *default* build. That build has libtorrent
+  1.2, so the series was kept across the 5.3.0 naming change. qBittorrent was closed cleanly and restarted,
+  and `config.json` held 5.3.0 back. The next scheduled check left 5.2.4 alone.
+- **Notify mode.** After `config --mode notify --skipped-version none`, a scheduled check installed nothing.
+  It showed one notification, in French, with three buttons whose links carry the version and the user's
+  token. A second check did not repeat it.
+- **Buttons.**
+  - "Later" set a 24 h snooze and "Skip this version" was saved.
+  - Two links with a wrong token were ignored and logged.
+  - "Update now" installed 5.3.0 again and restarted qBittorrent.
+- **The failure:** the success notification after "Update now" was missing. The scenario opened the links
+  with `Start-Process` from its PowerShell console. The started exe attached to that console and took itself
+  for a terminal run, which reports in place. Fixes:
+  - a notification click (`activate`) now always reports through notifications;
+  - the scenario opens links through Explorer, which has no console, like a real click.
+- **Console output.** Accents in the captured output were garbled (`T�l�chargement`). This led to the
+  console code page fix (FINDINGS §8b).
+
+**Run 9: lt20 build: 56/56 PASS.**
+- Same steps from 5.2.3 lt20. The update installed 5.3.0 default (libtorrent 2.1), and the rollback
+  installed 5.2.4 **lt20**, so the 2.x series was kept both ways.
+- The success notification after "Update now" was shown and has no button.
+- Captured console output now has correct accents.
+
+**Run 10: the windows ("ui" variant): 66/66 PASS, all in French.**
+- The setup window ("Garder qBittorrent à jour") offered notify mode. The first check, started by setup,
+  installed nothing and showed the "available" notification.
+- The settings window ("Rechercher des mises à jour maintenant") offered 5.3.0 and installed it.
+- "Réinstaller la version précédente" asked for confirmation, then reinstalled 5.2.4 (libtorrent 1.2). It
+  listed each step and said that 5.3.0 is now held back.
+- The notify-mode and button steps of run 9 passed again. The scenario aged `notifiedAt` by two days to
+  get past the 24 h reminder delay.
+- Uninstall removed the notification registration and the protocol as well.
+
 ### Not validated yet
 
 - **A long shutdown** (many torrents, tracker announces) and resume data checked torrent by torrent.
@@ -137,6 +187,8 @@ ACLs as applied (from `icacls`):
 - **A standard account running the whole update** in its own session (signed in interactively). Its parts
   are covered: inbox write, Apply task start, ACLs.
 - **ARM64**: the arm64 build is published but not run yet.
-- **A real install in development mode** (`update` from an elevated terminal): installs qBittorrent, so only
-  in Sandbox or a VM.
-- Restart of qBittorrent from an elevated process through the shell token.
+- **A real install in development mode** (`update` from an elevated terminal, without the Apply task). Its
+  direct, in-process install path is the one `rollback` uses, which runs 8 to 10 validated.
+- **A real mouse click on a notification button.** The scenario opens the same `qbtautoupdate:` links
+  through Explorer, as Windows does, but does not click the toast itself.
+- **Several users signed in at once**, each with their own notifications and token.

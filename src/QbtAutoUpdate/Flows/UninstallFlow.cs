@@ -52,6 +52,7 @@ internal static class UninstallFlow
         }
         UninstallEntry.Delete();
         TryDeleteFile(SetupFlow.StartMenuShortcut);
+        Toasts.Unregister();
 
         // The log file lives in the folders deleted below.
         context.StopFileLogging();

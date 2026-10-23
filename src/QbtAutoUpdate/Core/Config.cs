@@ -45,6 +45,8 @@ public sealed record MachineConfig
     public NotificationLevel Notifications { get; init; } = NotificationLevel.All;
     /// <summary>Never enabled by default: killing qBittorrent can lose resume data (see README).</summary>
     public bool AllowForceClose { get; init; }
+    /// <summary>Set by "rollback": automatic runs do not reinstall the version that was rolled back.</summary>
+    public QbtVersion? SkippedVersion { get; init; }
 
     public static readonly MachineConfig Default = new();
 
@@ -69,6 +71,7 @@ public sealed record MachineConfig
             BackupTorrents = f.Bool("backupTorrents", Default.BackupTorrents),
             Notifications = f.Choice("notifications", Default.Notifications, ("all", NotificationLevel.All), ("errors", NotificationLevel.Errors), ("none", NotificationLevel.None)),
             AllowForceClose = f.Bool("allowForceClose", Default.AllowForceClose),
+            SkippedVersion = f.Version("skippedVersion"),
         };
     }
 
@@ -91,6 +94,8 @@ public sealed record MachineConfig
         w.WriteBoolean("backupTorrents", BackupTorrents);
         w.WriteString("notifications", Notifications switch { NotificationLevel.Errors => "errors", NotificationLevel.None => "none", _ => "all" });
         w.WriteBoolean("allowForceClose", AllowForceClose);
+        if (SkippedVersion is { } skipped)
+            w.WriteString("skippedVersion", skipped.ToString());
         w.WriteEndObject();
     }
 }
@@ -104,6 +109,11 @@ public sealed record UserSettings
     public QbtVersion? SkippedVersion { get; init; }
     public DateTimeOffset? SnoozeUntil { get; init; }
     public WebUiSettings? WebUi { get; init; }
+    /// <summary>Secret carried by notification buttons (ToastAction); only this user can read user.json.</summary>
+    public string? NotificationToken { get; init; }
+    /// <summary>Last version announced by a notification, so it is not announced again every few hours.</summary>
+    public QbtVersion? NotifiedVersion { get; init; }
+    public DateTimeOffset? NotifiedAt { get; init; }
 
     public static readonly UserSettings Default = new();
 
@@ -119,6 +129,9 @@ public sealed record UserSettings
             SkippedVersion = f.Version("skippedVersion"),
             SnoozeUntil = f.Date("snoozeUntil"),
             WebUi = LoadWebUi(f.Object("webUi"), warnings),
+            NotificationToken = f.String("notificationToken"),
+            NotifiedVersion = f.Version("notifiedVersion"),
+            NotifiedAt = f.Date("notifiedAt"),
         };
     }
 
@@ -129,6 +142,12 @@ public sealed record UserSettings
             w.WriteString("skippedVersion", skipped.ToString());
         if (SnoozeUntil is { } snooze)
             w.WriteString("snoozeUntil", JsonFiles.ToIso(snooze));
+        if (NotificationToken is { } token)
+            w.WriteString("notificationToken", token);
+        if (NotifiedVersion is { } notified)
+            w.WriteString("notifiedVersion", notified.ToString());
+        if (NotifiedAt is { } notifiedAt)
+            w.WriteString("notifiedAt", JsonFiles.ToIso(notifiedAt));
         if (WebUi is { } webUi)
         {
             w.WriteStartObject("webUi");

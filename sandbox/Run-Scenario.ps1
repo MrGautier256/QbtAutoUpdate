@@ -18,6 +18,9 @@ $Data = 'C:\ProgramData\QbtAutoUpdate'
 $PublicShortcut = 'C:\Users\Public\Desktop\qBittorrent.lnk'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $QbtLog = Join-Path $env:LOCALAPPDATA 'qBittorrent\logs\qbittorrent.log'
+$UserFile = Join-Path $env:LOCALAPPDATA 'QbtAutoUpdate\user.json'
+$AumidKey = 'Software\Classes\AppUserModelId\QbtAutoUpdate'
+$ProtocolKey = 'HKLM:\Software\Classes\qbtautoupdate'
 $Summary = New-Object System.Collections.Generic.List[string]
 
 Start-Transcript -Path (Join-Path $Results 'transcript.txt') | Out-Null
@@ -49,6 +52,43 @@ function AsUser([System.Management.Automation.PSCredential] $Credential, [string
     }
 }
 function State { if (Test-Path "$Data\state.json") { Get-Content "$Data\state.json" -Raw | ConvertFrom-Json } }
+function UserSettings { if (Test-Path $UserFile) { Get-Content $UserFile -Raw | ConvertFrom-Json } }
+function Short([string] $FileVersion) { ([version]$FileVersion).ToString(3) }
+
+# Waits for a run of a scheduled task to end (one started after $Previous, when given); returns its result code.
+function Wait-Task([string] $Name, [int] $Seconds = 900, $Previous = $null) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        Start-Sleep 3
+        $task = Get-ScheduledTask -TaskPath '\QbtAutoUpdate\' -TaskName $Name
+        $info = Get-ScheduledTaskInfo -TaskPath '\QbtAutoUpdate\' -TaskName $Name
+    } while (($task.State -eq 'Running' -or ($Previous -and $info.LastRunTime -eq $Previous)) -and (Get-Date) -lt $deadline)
+    return $info.LastTaskResult
+}
+function Invoke-Task([string] $Name, [int] $Seconds = 900) {
+    $previous = (Get-ScheduledTaskInfo -TaskPath '\QbtAutoUpdate\' -TaskName $Name).LastRunTime
+    schtasks.exe /run /tn "\QbtAutoUpdate\$Name" | Out-Null
+    return Wait-Task $Name $Seconds $previous
+}
+
+# Opens a qbtautoupdate: link through Explorer, as a click on a notification button does (a parent without a
+# console), and waits for the QbtAutoUpdate process it starts to end.
+function Activate([string] $Uri, [int] $Seconds = 900) {
+    Start-Process explorer.exe -ArgumentList "`"$Uri`""
+    Start-Sleep 5
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Process QbtAutoUpdate -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Installed }) -and (Get-Date) -lt $deadline) {
+        Start-Sleep 3
+    }
+}
+
+# The notifications Windows keeps for QbtAutoUpdate in the notification center.
+[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+function Toasts {
+    try { @([Windows.UI.Notifications.ToastNotificationManager]::History.GetHistory('QbtAutoUpdate') | ForEach-Object { $_.Content.GetXml() }) }
+    catch { Note "Toast history unavailable: $_"; @() }
+}
+function Clear-Toasts { try { [Windows.UI.Notifications.ToastNotificationManager]::History.Clear('QbtAutoUpdate') } catch { } }
 
 # ---- UI Automation, for the windows of the "ui" variant (TaskDialogs titled "QbtAutoUpdate")
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -103,6 +143,16 @@ function Press($Window, [string] $ControlId) {
     Start-Sleep -Milliseconds 300
     return $true
 }
+# Dialog texts in English or French: the sandbox uses the host's display language. ASCII only, '.' for accents.
+$SetupPattern = 'Keep qBittorrent up to date|Garder qBittorrent . jour'
+$ReadyPattern = 'QbtAutoUpdate is ready|QbtAutoUpdate est pr.t'
+$SettingsPattern = 'Check for updates now|Rechercher des mises . jour maintenant'
+$AvailablePattern = 'is available|est disponible'
+$InstalledPattern = 'qBittorrent \d[\d.]* (is installed|est install.)'
+$NotInstalledPattern = 'was not installed|n.a pas .t. install.'
+$RollbackConfirmPattern = 'Reinstall the previous version\?|R.installer la version pr.c.dente \?'
+$RolledBackPattern = 'Previous version reinstalled|Version pr.c.dente r.install.e'
+$NotRolledBackPattern = 'previous version was not reinstalled|version pr.c.dente n.a pas'
 function TaskInfo([string] $Name) { schtasks.exe /query /tn "\QbtAutoUpdate\$Name" /v /fo list 2>&1 | Out-String }
 
 # ---------------------------------------------------------------- environment
@@ -172,12 +222,12 @@ if ($Variant -eq 'ui') {
     # Double-click equivalent: started by Explorer, so no console is attached and the windows open.
     # Buttons are pressed by control id, which does not depend on the Windows display language.
     Start-Process explorer.exe -ArgumentList "`"$Tool`""
-    $w = Wait-Dialog 'Keep qBittorrent up to date' 60
+    $w = Wait-Dialog $SetupPattern 60
     Save 'ui-setup-window.txt' (Dump $w)
     Check 'setup window shown on double-click' ($null -ne $w) (Get-DialogText $w)
     Press $w '102' | Out-Null   # "Ask me first with a notification": the first check must install nothing
     Press $w '200' | Out-Null   # Install
-    $w = Wait-Dialog 'QbtAutoUpdate is ready' 120
+    $w = Wait-Dialog $ReadyPattern 120
     Save 'ui-setup-result.txt' (Dump $w)
     Check 'setup window reports success' ($null -ne $w) (Get-DialogText $w)
     Press $w '1' | Out-Null     # OK
@@ -193,30 +243,36 @@ Check 'exe copied to Program Files' (Test-Path $Installed)
 Check 'Check and Apply tasks registered' ((schtasks.exe /query /tn '\QbtAutoUpdate\Check' 2>$null) -and (schtasks.exe /query /tn '\QbtAutoUpdate\Apply' 2>$null))
 Check 'Installed apps entry' ($null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QbtAutoUpdate' -ErrorAction SilentlyContinue))
 Check 'Start menu shortcut' (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\QbtAutoUpdate.lnk")
+Check 'notification sender registered' ((Test-Path "HKLM:\$AumidKey") -and (Test-Path 'C:\Program Files\QbtAutoUpdate\QbtAutoUpdate.png'))
+Check 'qbtautoupdate: links registered' ((Get-ItemProperty "$ProtocolKey\shell\open\command" -ErrorAction SilentlyContinue).'(default)' -eq "`"$Installed`" `"%1`"")
 Save 'acl.txt' $(icacls.exe $Data; icacls.exe "$Data\inbox"; icacls.exe "$Data\work"; icacls.exe 'C:\Program Files\QbtAutoUpdate')
 Save 'task-check.xml' (schtasks.exe /query /tn '\QbtAutoUpdate\Check' /xml | Out-String)
 Save 'task-apply.xml' (schtasks.exe /query /tn '\QbtAutoUpdate\Apply' /xml | Out-String)
 
 # ---------------------------------------------------------------- 3. the update
 if ($Variant -eq 'ui') {
-    # Notify mode: the first check installs nothing. The update is done from the settings window.
-    Start-Sleep 20
+    # Notify mode: the first check, started by setup, installs nothing. The update is done from the settings window.
+    Start-Sleep 10
+    Wait-Task 'Check' 300
     Check 'first check in notify mode installed nothing' ((QbtVersionNow) -like "$QbtVersion*") "file $(QbtVersionNow)"
+    $toasts = Toasts
+    Save 'toasts-first-check.xml' $toasts
+    Check 'first check in notify mode showed a notification' ("$toasts" -match 'qbtautoupdate:update\?v=') "$(@($toasts).Count) notification(s)"
     Start-Process explorer.exe -ArgumentList "`"$Installed`""
-    $w = Wait-Dialog 'Check for updates now' 60
+    $w = Wait-Dialog $SettingsPattern 60
     Save 'ui-settings-window.txt' (Dump $w)
     Check 'settings window shown when installed' ($null -ne $w) (Get-DialogText $w)
     Press $w '301' | Out-Null   # Check for updates now
-    $w = Wait-Dialog 'is available' 120
+    $w = Wait-Dialog $AvailablePattern 120
     Save 'ui-update-offer.txt' (Dump $w)
     Check 'update offered in a window' ($null -ne $w) (Get-DialogText $w)
     Press $w '6' | Out-Null     # Update now
     # The result's main instruction: "qBittorrent 5.3.0 is installed" (not the setup text "... (libtorrent 1.2) is installed in").
-    $w = Wait-Dialog '(qBittorrent \d[\d.]* is installed|did not complete)' 900
+    $w = Wait-Dialog "$InstalledPattern|$NotInstalledPattern" 900
     Save 'ui-update-result.txt' (Dump $w)
-    Check 'update done from the settings window' ((Get-DialogText $w) -match 'qBittorrent \d[\d.]* is installed') (Get-DialogText $w)
+    Check 'update done from the settings window' ((Get-DialogText $w) -match $InstalledPattern) (Get-DialogText $w)
     Press $w '1' | Out-Null     # OK
-    $w = Wait-Dialog 'Check for updates now' 30
+    $w = Wait-Dialog $SettingsPattern 30
     Check 'back to the settings window' ($null -ne $w)
     Press $w '8' | Out-Null     # Close
     Start-Sleep 20
@@ -269,6 +325,83 @@ Check 'Public desktop shortcut kept' (Test-Path $PublicShortcut)
 Check 'start with Windows kept' ((Get-ItemProperty $RunKey -ErrorAction SilentlyContinue).qBittorrent -eq $runValue)
 Check 'settings backed up' (@(Get-ChildItem (Join-Path $env:LOCALAPPDATA 'QbtAutoUpdate\backups') -Recurse -Filter qBittorrent.ini -ErrorAction SilentlyContinue).Count -ge 1)
 
+# ---------------------------------------------------------------- 3b. rollback, held-back version, notifications
+$updated = QbtVersionNow
+$updatedShort = Short $updated
+if ($Variant -eq 'ui') {
+    Start-Process explorer.exe -ArgumentList "`"$Installed`""
+    $w = Wait-Dialog $SettingsPattern 60
+    Press $w '306' | Out-Null   # Reinstall the previous version
+    $w = Wait-Dialog $RollbackConfirmPattern 30
+    Save 'ui-rollback-confirm.txt' (Dump $w)
+    Check 'rollback asks for confirmation' ($null -ne $w) (Get-DialogText $w)
+    Press $w '6' | Out-Null     # Reinstall
+    $w = Wait-Dialog "$RolledBackPattern|$NotRolledBackPattern" 900
+    Save 'ui-rollback-result.txt' (Dump $w)
+    Check 'rollback done from the settings window' ((Get-DialogText $w) -match $RolledBackPattern) (Get-DialogText $w)
+    Press $w '1' | Out-Null     # OK
+    $w = Wait-Dialog $SettingsPattern 30
+    Press $w '8' | Out-Null     # Close
+}
+else {
+    $code = Tool $Installed @('rollback') 'rollback.txt'
+    Check 'rollback' ($code -eq 0) "exit $code"
+}
+Start-Sleep 20
+$previous = QbtVersionNow
+Check 'previous release installed' ($previous -ne 'missing' -and [version]$previous -lt [version]$updated) "$updated -> $previous"
+Tool $Installed @('status') 'status-rollback.txt' | Out-Null
+Check "variant kept by rollback ($expected)" ((Get-Content (Join-Path $Results 'status-rollback.txt') -Raw) -match [regex]::Escape("Variant        $expected"))
+Check 'qBittorrent started again after rollback' ($null -ne (Get-Process qbittorrent -ErrorAction SilentlyContinue))
+$machineConfig = Get-Content "$Data\config.json" -Raw
+Save 'config-rollback.json' $machineConfig
+Check "rolled-back $updatedShort held back for automatic runs" (($machineConfig | ConvertFrom-Json).skippedVersion -eq $updatedShort)
+
+$code = Invoke-Task 'Check'
+Check 'automatic check leaves the held-back version alone' ((QbtVersionNow) -eq $previous) "task result $code, file $(QbtVersionNow)"
+
+# Notify mode, with the held-back version released by an administrator.
+$code = Tool $Installed @('config', '--mode', 'notify', '--skipped-version', 'none') 'config-notify.txt'
+Check 'config --mode notify --skipped-version none' ($code -eq 0 -and -not (Get-Content "$Data\config.json" -Raw | ConvertFrom-Json).skippedVersion) "exit $code"
+$settings = Get-Content $UserFile -Raw -ErrorAction SilentlyContinue
+if ($settings -match '"notifiedAt"') {
+    # The ui variant was already told about this version: pretend that was two days ago, past the 24 h reminder delay.
+    $settings = $settings -replace '"notifiedAt":\s*"[^"]*"', ('"notifiedAt": "{0}"' -f [DateTimeOffset]::Now.AddDays(-2).ToString('o'))
+    [System.IO.File]::WriteAllText($UserFile, $settings)
+}
+Clear-Toasts
+$code = Invoke-Task 'Check'
+$toasts = Toasts
+Save 'toasts-notify.xml' $toasts
+Check 'notify mode installs nothing' ((QbtVersionNow) -eq $previous) "task result $code, file $(QbtVersionNow)"
+Check 'notify mode shows a notification with three buttons' (@($toasts).Count -eq 1 -and [regex]::Matches("$toasts", '<action ').Count -eq 3 -and "$toasts" -match "qbtautoupdate:update\?v=$([regex]::Escape($updatedShort))") "$(@($toasts).Count) notification(s)"
+Check 'announced version remembered' ((UserSettings).notifiedVersion -eq $updatedShort)
+Clear-Toasts
+$code = Invoke-Task 'Check'
+Check 'the same version is not announced again within 24 h' (@(Toasts).Count -eq 0) "task result $code"
+
+# The buttons, as Windows starts them: "QbtAutoUpdate.exe qbtautoupdate:<action>?v=...&t=<token>".
+$token = (UserSettings).notificationToken
+Check 'per-user notification token' ($token -match '^[0-9a-f]{32}$')
+Activate "qbtautoupdate:later?v=$updatedShort&t=$token" 60
+$snooze = (UserSettings).snoozeUntil
+Check 'Later snoozes for a day' ($snooze -and [DateTimeOffset]::Parse($snooze) -gt [DateTimeOffset]::Now.AddHours(23)) "$snooze"
+Activate "qbtautoupdate:skip?v=$updatedShort&t=$token" 60
+Check 'Skip this version is remembered' ((UserSettings).skippedVersion -eq $updatedShort)
+Activate "qbtautoupdate:skip?v=9.9.9&t=$('0' * 32)" 60
+Activate "qbtautoupdate:update?v=$updatedShort&t=$('0' * 32)" 120
+Check 'links without the token are ignored' ((UserSettings).skippedVersion -eq $updatedShort -and (QbtVersionNow) -eq $previous) "file $(QbtVersionNow)"
+$before = Get-Process qbittorrent -ErrorAction SilentlyContinue | Select-Object -First 1
+Clear-Toasts
+Activate "qbtautoupdate:update?v=$updatedShort&t=$token" 900
+Start-Sleep 20
+Check 'Update now installs the announced version' ((QbtVersionNow) -eq $updated) "file $(QbtVersionNow)"
+$after = Get-Process qbittorrent -ErrorAction SilentlyContinue | Select-Object -First 1
+Check 'qBittorrent started again after Update now' ($null -ne $after -and $after.Id -ne $before.Id) "PID $($before.Id) -> $($after.Id)"
+$toasts = Toasts
+Save 'toasts-updated.xml' $toasts
+Check 'success notification without buttons' (@($toasts).Count -eq 1 -and "$toasts" -notmatch '<action ') "$(@($toasts).Count) notification(s)"
+
 # ---------------------------------------------------------------- 4. a standard user
 $user = 'qbtstd'
 # At most 14 characters: net.exe asks an interactive question above that.
@@ -313,6 +446,7 @@ Check 'Program Files folder removed' (-not (Test-Path 'C:\Program Files\QbtAutoU
 Check 'ProgramData folder removed' (-not (Test-Path $Data))
 Check 'Installed apps entry removed' ($null -eq (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QbtAutoUpdate' -ErrorAction SilentlyContinue))
 Check 'Start menu shortcut removed' (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\QbtAutoUpdate.lnk"))
+Check 'notification registration removed' (-not (Test-Path "HKLM:\$AumidKey") -and -not (Test-Path "HKCU:\$AumidKey") -and -not (Test-Path $ProtocolKey))
 Check 'qBittorrent itself untouched' (Test-Path $Qbt)
 
 # ---------------------------------------------------------------- done

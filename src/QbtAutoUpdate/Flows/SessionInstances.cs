@@ -32,13 +32,12 @@ internal sealed class SessionInstances : IDisposable
         {
             if (Elsewhere.Count > 0)
             {
-                return $"qBittorrent is also running in another Windows session (PID {string.Join(", ", Elsewhere.Select(p => p.Id))}). "
-                       + "It must be closed there first.";
+                return T.Format("BlockOtherSession", string.Join(", ", Elsewhere.Select(p => p.Id)));
             }
             return Mine.FirstOrDefault(i => i.Access != QbtAccess.Controllable) is { } blocked
                 ? blocked.Access == QbtAccess.Elevated
-                    ? $"qBittorrent (PID {blocked.Id}) runs as administrator, so QbtAutoUpdate cannot close it. Close it, or start it normally."
-                    : $"qBittorrent (PID {blocked.Id}) cannot be closed by this account."
+                    ? T.Format("CloseElevated", blocked.Id)
+                    : T.Format("BlockOtherUser", blocked.Id)
                 : null;
         }
     }
@@ -74,7 +73,7 @@ internal sealed class SessionInstances : IDisposable
             closed.Add(instance);
             messages.Add(result.Message);
         }
-        return (true, closed, messages.Count == 0 ? "qBittorrent was not running." : string.Join(" ", messages));
+        return (true, closed, messages.Count == 0 ? T.Get("CloseNotRunning") : string.Join(" ", messages));
     }
 
     /// <summary>Starts again, unelevated and with their instance options, the instances that were closed.</summary>

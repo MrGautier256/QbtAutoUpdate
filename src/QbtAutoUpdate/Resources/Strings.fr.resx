@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PlanDisabled" xml:space="preserve"><value>Les mises à jour automatiques sont désactivées.</value></data>
+  <data name="PlanNotInstalled" xml:space="preserve"><value>qBittorrent n'est pas installé.</value></data>
+  <data name="PlanUnsupported" xml:space="preserve"><value>Cette installation de qBittorrent n'est pas prise en charge.</value></data>
+  <data name="PlanVersionUnreadable" xml:space="preserve"><value>Impossible de lire la version de qBittorrent installée.</value></data>
+  <data name="PlanMetered" xml:space="preserve"><value>La connexion est limitée : la vérification est reportée.</value></data>
+  <data name="PlanInstalledNewer" xml:space="preserve"><value>La version installée {0} est plus récente que la dernière publiée, {1} (version bêta ou de développement ?).</value></data>
+  <data name="PlanUpToDate" xml:space="preserve"><value>qBittorrent {0} est à jour.</value></data>
+  <data name="PlanSkipped" xml:space="preserve"><value>La version {0} est ignorée.</value></data>
+  <data name="PlanSnoozed" xml:space="preserve"><value>Rappel reporté au {0}.</value></data>
+  <data name="PlanVariantUnknown" xml:space="preserve"><value>La série libtorrent du qBittorrent installé est inconnue ; choisissez-la dans les réglages (lt2 ou lt12).</value></data>
+  <data name="PlanNotYetAvailable" xml:space="preserve"><value>qBittorrent {0} est annoncé mais pas encore téléchargeable ({1}).</value></data>
+  <data name="PlanVariantMissing" xml:space="preserve"><value>qBittorrent {0} est sorti, mais sans version {1} pour ce PC. Rien ne sera installé.</value></data>
+  <data name="PlanTooRecent" xml:space="preserve"><value>qBittorrent {0} a été publié le {1} ; attente de {2} h avant de l'installer.</value></data>
+  <data name="PlanPublishedUnknown" xml:space="preserve"><value>une date inconnue</value></data>
+  <data name="PlanUpdateAvailable" xml:space="preserve"><value>Mise à jour disponible : {0} -&gt; {1} ({2}, {3}).</value></data>
+  <data name="PlanReinstallAvailable" xml:space="preserve"><value>Réinstallation disponible : {0} ({1}, {2}).</value></data>
+  <data name="NoteNoInstallLocation" xml:space="preserve"><value>Le registre contient des clés qBittorrent mais aucun emplacement d'installation utilisable.</value></data>
+  <data name="NoteLegacy32" xml:space="preserve"><value>Installation 32 bits : non prise en charge, réinstallez la version 64 bits.</value></data>
+  <data name="NoteExeMissing" xml:space="preserve"><value>qbittorrent.exe est absent : l'installation est incomplète et sera réparée par la prochaine mise à jour.</value></data>
+  <data name="NoteFork" xml:space="preserve"><value>Il s'agit de qBittorrent Enhanced Edition, une variante que QbtAutoUpdate ne met pas à jour.</value></data>
+  <data name="NoteNotOfficial" xml:space="preserve"><value>qbittorrent.exe indique « {0} » par « {1} » : ce n'est pas la version officielle.</value></data>
+  <data name="NotePortable" xml:space="preserve"><value>qBittorrent portable (dossier profile, sans clés de registre) : non pris en charge dans cette version.</value></data>
+  <data name="NoteUnregistered" xml:space="preserve"><value>qBittorrent tourne depuis un dossier qu'aucun installateur n'a enregistré : non pris en charge.</value></data>
+  <data name="UpdNotSetUp" xml:space="preserve"><value>QbtAutoUpdate n'est pas installé sur ce PC : ouvrez QbtAutoUpdate.exe pour l'installer. Rien n'a été modifié.</value></data>
+  <data name="UpdDownloading" xml:space="preserve"><value>Téléchargement de {0} ({1}) et de sa signature...</value></data>
+  <data name="UpdSignatureOk" xml:space="preserve"><value>Signature officielle vérifiée (clé ...{0}, signée le {1}).</value></data>
+  <data name="UpdUnknownKey" xml:space="preserve"><value>L'installateur est signé par une clé que QbtAutoUpdate ne connaît pas. qBittorrent a peut-être changé de clé : mettez QbtAutoUpdate à jour. Rien n'a été installé.</value></data>
+  <data name="UpdBadSignature" xml:space="preserve"><value>L'installateur téléchargé ne correspond pas à sa signature (fichier altéré ou corrompu). Rien n'a été installé.</value></data>
+  <data name="UpdSignatureRefused" xml:space="preserve"><value>La signature de l'installateur a été refusée ({0}). Rien n'a été installé.</value></data>
+  <data name="UpdNothingChanged" xml:space="preserve"><value>{0} Rien n'a été modifié.</value></data>
+  <data name="UpdBackedUp" xml:space="preserve"><value>Réglages sauvegardés dans {0}.</value></data>
+  <data name="UpdInstallingTask" xml:space="preserve"><value>Installation...</value></data>
+  <data name="UpdRestarted" xml:space="preserve"><value>qBittorrent a été relancé.</value></data>
+  <data name="UpdRestartFailed" xml:space="preserve"><value>qBittorrent n'a pas pu être relancé : démarrez-le vous-même.</value></data>
+  <data name="UpdNoAnswer" xml:space="preserve"><value>La tâche de mise à jour n'a pas répondu (dernier résultat 0x{0}). Détails : {1}</value></data>
+  <data name="UpdHandOverFailed" xml:space="preserve"><value>Impossible de transmettre l'installateur à la tâche de mise à jour : {0}</value></data>
+  <data name="BlockOtherSession" xml:space="preserve"><value>qBittorrent tourne aussi dans une autre session Windows (PID {0}) ; il faut d'abord le fermer là-bas.</value></data>
+  <data name="BlockOtherUser" xml:space="preserve"><value>qBittorrent (PID {0}) ne peut pas être fermé par ce compte.</value></data>
+  <data name="CloseElevated" xml:space="preserve"><value>qBittorrent (PID {0}) tourne en administrateur : QbtAutoUpdate ne peut pas le fermer. Fermez-le, ou lancez-le normalement.</value></data>
+  <data name="CloseOtherUser" xml:space="preserve"><value>qBittorrent (PID {0}) appartient à un autre utilisateur.</value></data>
+  <data name="CloseUnreadable" xml:space="preserve"><value>qBittorrent (PID {0}) n'a pas pu être examiné.</value></data>
+  <data name="CloseAlreadyExited" xml:space="preserve"><value>qBittorrent (PID {0}) était déjà fermé.</value></data>
+  <data name="CloseWebUi" xml:space="preserve"><value>qBittorrent fermé par son interface Web en {0} s.</value></data>
+  <data name="CloseClean" xml:space="preserve"><value>qBittorrent fermé proprement en {0} s.</value></data>
+  <data name="CloseKilled" xml:space="preserve"><value>qBittorrent ne s'est pas fermé à temps et a été arrêté de force (allowForceClose).</value></data>
+  <data name="CloseTimeout" xml:space="preserve"><value>qBittorrent ne s'est pas fermé en {0} s. Fermez qBittorrent pour terminer la mise à jour.</value></data>
+  <data name="CloseNotRunning" xml:space="preserve"><value>qBittorrent n'était pas lancé.</value></data>
+  <data name="InstRefused" xml:space="preserve"><value>Installateur refusé : {0}</value></data>
+  <data name="InstBusy" xml:space="preserve"><value>qBittorrent est ouvert (PID {0}) ; l'installation sera faite plus tard.</value></data>
+  <data name="InstTimeout" xml:space="preserve"><value>L'installateur ne s'est pas terminé en {0} minutes.</value></data>
+  <data name="InstFailed" xml:space="preserve"><value>L'installateur a échoué : {0}.</value></data>
+  <data name="InstNotVerified" xml:space="preserve"><value>L'installateur a indiqué un succès, mais qBittorrent indique maintenant {0} (registre {1}) au lieu de {2}.</value></data>
+  <data name="InstWrongVariant" xml:space="preserve"><value>qBittorrent {0} est installé mais en {1} au lieu de {2}.</value></data>
+  <data name="InstInstalled" xml:space="preserve"><value>qBittorrent {0} ({1}) installé.</value></data>
+  <data name="Nsis0" xml:space="preserve"><value>succès</value></data>
+  <data name="Nsis1" xml:space="preserve"><value>l'installation a été annulée</value></data>
+  <data name="Nsis2" xml:space="preserve"><value>le script d'installation s'est interrompu</value></data>
+  <data name="Nsis1654" xml:space="preserve"><value>l'installateur a refusé ce système (Windows 10 1809 ou plus récent, 64 bits et architecture compatible requis)</value></data>
+  <data name="Nsis1223" xml:space="preserve"><value>l'invite administrateur a été annulée</value></data>
+  <data name="Nsis1314" xml:space="preserve"><value>les droits administrateur manquent</value></data>
+  <data name="Nsis1603" xml:space="preserve"><value>l'installateur n'a pas pu obtenir les droits administrateur</value></data>
+  <data name="Nsis1062" xml:space="preserve"><value>le service d'ouverture de session Windows est arrêté</value></data>
+  <data name="Nsis15618" xml:space="preserve"><value>qBittorrent était ouvert</value></data>
+  <data name="NsisUnknown" xml:space="preserve"><value>code de sortie inconnu {0}</value></data>
+  <data name="RbNoPrevious" xml:space="preserve"><value>Aucune version antérieure de qBittorrent n'a été trouvée sur SourceForge.</value></data>
+  <data name="RbStarting" xml:space="preserve"><value>Retour de qBittorrent {0} à {1} ({2}).</value></data>
+  <data name="RbDone" xml:space="preserve"><value>qBittorrent {0} ({1}) réinstallé. Les mises à jour automatiques ignoreront la version {2} jusqu'à la sortie d'une version plus récente.</value></data>
+  <data name="ToastAvailableTitle" xml:space="preserve"><value>qBittorrent {0} est disponible</value></data>
+  <data name="ToastAvailableBody" xml:space="preserve"><value>Version installée : {0} ({1}). QbtAutoUpdate ferme qBittorrent proprement, installe la mise à jour officielle vérifiée et le relance.</value></data>
+  <data name="ToastUpdateNow" xml:space="preserve"><value>Mettre à jour maintenant</value></data>
+  <data name="ToastLater" xml:space="preserve"><value>Plus tard</value></data>
+  <data name="ToastSkip" xml:space="preserve"><value>Ignorer cette version</value></data>
+  <data name="ToastUpdatedTitle" xml:space="preserve"><value>qBittorrent mis à jour vers {0}</value></data>
+  <data name="ToastUpdatedBody" xml:space="preserve"><value>Même version conservée ({0}) ; qBittorrent a été fermé proprement puis relancé.</value></data>
+  <data name="ToastFailedTitle" xml:space="preserve"><value>qBittorrent n'a pas été mis à jour</value></data>
+  <data name="ToastOpenLog" xml:space="preserve"><value>Ouvrir le journal</value></data>
+  <data name="ToastCloseTitle" xml:space="preserve"><value>Fermez qBittorrent pour terminer la mise à jour</value></data>
+  <data name="ToastCloseBody" xml:space="preserve"><value>qBittorrent {0} est prêt à être installé. {1}</value></data>
+  <data name="ToastRetry" xml:space="preserve"><value>Réessayer</value></data>
+  <data name="ToastNothingToDoTitle" xml:space="preserve"><value>Aucune mise à jour de qBittorrent à installer</value></data>
+  <data name="UiSetupTitle" xml:space="preserve"><value>Garder qBittorrent à jour</value></data>
+  <data name="UiSetupUpgradeTitle" xml:space="preserve"><value>Mettre à jour QbtAutoUpdate vers la version {0}</value></data>
+  <data name="UiSetupBody" xml:space="preserve"><value>QbtAutoUpdate cherche les nouvelles versions à l'ouverture de session et toutes les 6 heures, vérifie la signature officielle et conserve votre version de libtorrent (1.2 ou 2.x). Il ne tourne que lorsque c'est nécessaire, via le Planificateur de tâches.</value></data>
+  <data name="UiModeAuto" xml:space="preserve"><value>Mettre à jour automatiquement : fermer qBittorrent proprement, installer, le relancer</value></data>
+  <data name="UiModeNotify" xml:space="preserve"><value>Me demander d'abord par une notification</value></data>
+  <data name="UiSetupInstallButton" xml:space="preserve"><value>Installer</value></data>
+  <data name="UiSetupUpgradeButton" xml:space="preserve"><value>Mettre à jour</value></data>
+  <data name="UiSetupFooter" xml:space="preserve"><value>Une invite administrateur maintenant, plus aucune ensuite.</value></data>
+  <data name="UiVariantTitle" xml:space="preserve"><value>Quelle version de qBittorrent utilisez-vous ?</value></data>
+  <data name="UiVariantBody" xml:space="preserve"><value>QbtAutoUpdate n'a pas pu le déterminer à partir de qbittorrent.exe. Il installera toujours la version choisie.</value></data>
+  <data name="UiVariantLt2" xml:space="preserve"><value>libtorrent 2.x : le téléchargement par défaut depuis qBittorrent 5.3.0</value></data>
+  <data name="UiVariantLt12" xml:space="preserve"><value>libtorrent 1.2 : le téléchargement « lt12 » (le défaut avant la 5.3.0)</value></data>
+  <data name="UiSetupDoneTitle" xml:space="preserve"><value>QbtAutoUpdate est prêt</value></data>
+  <data name="UiSetupDoneBody" xml:space="preserve"><value>Il travaille désormais en arrière-plan, sans invite administrateur.
+
+Pour modifier un réglage, vérifier maintenant ou désinstaller, ouvrez QbtAutoUpdate depuis le menu Démarrer.</value></data>
+  <data name="UiSetupFailed" xml:space="preserve"><value>L'installation a échoué</value></data>
+  <data name="UiExitCode" xml:space="preserve"><value>Code de sortie {0}. Les détails sont dans le dossier des journaux :
+{1}</value></data>
+  <data name="UiInstalled" xml:space="preserve"><value>qBittorrent {0} ({1}) est installé dans {2}.</value></data>
+  <data name="UiVariantUnknownShort" xml:space="preserve"><value>version de libtorrent inconnue</value></data>
+  <data name="UiNotInstalled" xml:space="preserve"><value>qBittorrent n'est pas encore installé. QbtAutoUpdate le gardera à jour dès qu'il le sera.</value></data>
+  <data name="UiNotTouched" xml:space="preserve"><value>QbtAutoUpdate n'y touchera pas.</value></data>
+  <data name="UiStatusOnAuto" xml:space="preserve"><value>Mises à jour automatiques : activées. Installe les mises à jour seul, à l'ouverture de session et toutes les {0} h.</value></data>
+  <data name="UiStatusOnNotify" xml:space="preserve"><value>Mises à jour automatiques : activées. Demande d'abord par une notification, à l'ouverture de session et toutes les {0} h.</value></data>
+  <data name="UiStatusOff" xml:space="preserve"><value>Mises à jour automatiques : désactivées.</value></data>
+  <data name="UiHeldBack" xml:space="preserve"><value>La version {0} est écartée après un retour en arrière.</value></data>
+  <data name="UiLastCheck" xml:space="preserve"><value>Dernière vérification : {0}.</value></data>
+  <data name="UiLastAttempt" xml:space="preserve"><value>Dernière mise à jour : {0}, {1}</value></data>
+  <data name="UiCheckNow" xml:space="preserve"><value>Rechercher des mises à jour maintenant</value></data>
+  <data name="UiTurnOff" xml:space="preserve"><value>Désactiver les mises à jour automatiques</value></data>
+  <data name="UiTurnOn" xml:space="preserve"><value>Activer les mises à jour automatiques</value></data>
+  <data name="UiSwitchToNotify" xml:space="preserve"><value>Demander avant de mettre à jour
+Afficher une notification au lieu d'installer seul</value></data>
+  <data name="UiSwitchToAuto" xml:space="preserve"><value>Mettre à jour automatiquement
+Fermer qBittorrent proprement, installer, le relancer</value></data>
+  <data name="UiRollback" xml:space="preserve"><value>Réinstaller la version précédente
+Si la dernière version de qBittorrent pose problème</value></data>
+  <data name="UiOpenLogs" xml:space="preserve"><value>Ouvrir le dossier des journaux</value></data>
+  <data name="UiUninstall" xml:space="preserve"><value>Désinstaller QbtAutoUpdate
+qBittorrent lui-même reste installé</value></data>
+  <data name="UiUninstallConfirmTitle" xml:space="preserve"><value>Désinstaller QbtAutoUpdate ?</value></data>
+  <data name="UiUninstallConfirmBody" xml:space="preserve"><value>Les tâches planifiées, réglages et journaux de QbtAutoUpdate sont supprimés. qBittorrent lui-même reste installé.</value></data>
+  <data name="UiUninstallButton" xml:space="preserve"><value>Désinstaller</value></data>
+  <data name="UiUninstallDoneTitle" xml:space="preserve"><value>QbtAutoUpdate a été supprimé</value></data>
+  <data name="UiUninstallDoneBody" xml:space="preserve"><value>qBittorrent lui-même n'a pas été modifié.</value></data>
+  <data name="UiUninstallFailed" xml:space="preserve"><value>La désinstallation a échoué</value></data>
+  <data name="UiChecking" xml:space="preserve"><value>Recherche de mises à jour…</value></data>
+  <data name="UiCheckFailed" xml:space="preserve"><value>Impossible de rechercher des mises à jour</value></data>
+  <data name="UiUpToDate" xml:space="preserve"><value>qBittorrent est à jour</value></data>
+  <data name="UiNothingToInstall" xml:space="preserve"><value>Aucune mise à jour à installer</value></data>
+  <data name="UiUpdating" xml:space="preserve"><value>Mise à jour de qBittorrent vers la version {0}…</value></data>
+  <data name="UiProgressBody" xml:space="preserve"><value>qBittorrent va être fermé puis relancé. Cela prend une à deux minutes.</value></data>
+  <data name="UiUpdated" xml:space="preserve"><value>qBittorrent {0} est installé</value></data>
+  <data name="UiUpdateIncomplete" xml:space="preserve"><value>qBittorrent {0} n'a pas été installé</value></data>
+  <data name="UiRollbackConfirmTitle" xml:space="preserve"><value>Réinstaller la version précédente ?</value></data>
+  <data name="UiRollbackConfirmBody" xml:space="preserve"><value>qBittorrent {0} sera remplacé par la version qui la précède, avec la même version de libtorrent. Les mises à jour automatiques ignoreront ensuite la version {0} jusqu'à la sortie d'une version plus récente.</value></data>
+  <data name="UiRollbackButton" xml:space="preserve"><value>Réinstaller</value></data>
+  <data name="UiRollingBack" xml:space="preserve"><value>Réinstallation de la version précédente…</value></data>
+  <data name="UiRollbackDone" xml:space="preserve"><value>Version précédente réinstallée</value></data>
+  <data name="UiRollbackFailed" xml:space="preserve"><value>La version précédente n'a pas été réinstallée</value></data>
+</root>

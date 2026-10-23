@@ -271,3 +271,64 @@ PowerShell 5.1 compatible, pure ASCII): `Start-Scenario.ps1` publishes the exe, 
 installers, writes the `.wsb` with absolute paths (none in the repository) and starts the sandbox.
 `Run-Scenario.ps1` runs inside, writes PASS/FAIL lines and evidence to a mapped folder, and shuts the sandbox
 down.
+
+## Notifications, localization, rollback (phase 4)
+
+**D-38. Notifications through WinRT and a protocol, without the Community Toolkit.**
+`Microsoft.Toolkit.Uwp.Notifications` has had no release since 2022, and its COM activator is not
+trim-safe. QbtAutoUpdate calls `Windows.UI.Notifications` from the Windows SDK projection instead and writes
+the toast XML itself (`ToastContent`, unit-tested).
+- **Registration.** An unpackaged app needs an AppUserModelID with a display name and an icon. Setup
+  registers it machine-wide and writes `QbtAutoUpdate.png` next to the exe. Each run that shows a toast also
+  registers it under HKCU, in case setup ran for another account. Uninstall removes both.
+- **Buttons.** The buttons use protocol activation, `qbtautoupdate:<action>?v=<version>&t=<token>`.
+  Setup registers the protocol under HKLM to start the installed exe. A click therefore works after the
+  check that showed the toast has exited, with no COM server and no resident process.
+- **Token.** Any web page or document can open a `qbtautoupdate:` link, so each action carries a random
+  per-user token. The token is 128 bits, kept in `user.json` and compared in constant time; links without it
+  are ignored and logged.
+- **Effect of a forged link.** Even a forged link with a valid token could only do what the user can
+  already do: snooze, skip, open the logs, or start a signed, non-downgrading update.
+- **When toasts are shown.** Only runs nobody watches show toasts: the scheduled check, and the run started by
+  a click. A click always reports through toasts, even when the program that opened the link had a
+  console. Terminal and window runs report in place. The `notifications` setting (`all`, `errors`, `none`)
+  filters them, but in notify mode `errors` still shows the "available" toast, since that toast is the
+  point of the mode.
+- **Toast replacement.** Toasts carry a tag (`available`, `result`), so a newer one replaces the older one in
+  the notification center.
+
+**D-39. Localization: English and French resources, CLI diagnostics in English.**
+- **Resources.** The strings live in `Resources/Strings.resx` (neutral English) and `Strings.fr.resx`. The
+  French satellite assembly is bundled inside the single-file exe. Other languages fall back to English.
+- **What is translated.** Windows, toasts and the messages they show are translated, which includes plan,
+  close and NSIS exit-code messages, shared by the windows and the terminal.
+- **What stays English.** The usage text, argument errors, `status` and log files stay English. They are
+  meant for scripts, bug reports and searches. The same goes for technical details inside a translated
+  message, such as a signature verdict or an installer refusal reason.
+- **Tests.** Tests pin the invariant culture with a module initializer. A test checks that every key exists
+  in French with the same placeholders, and that every key the code uses exists.
+- **Console output.** Output is encoded in the console's code page, even when redirected (FINDINGS §8b).
+  Console text therefore avoids characters missing from OEM code pages: `->`, not an arrow, and `...`, not
+  an ellipsis.
+
+**D-40. Rollback: the previous stable release, as administrator, then held back.**
+- **Which version.** `rollback` reads the release folders from SourceForge's root RSS and takes the highest
+  stable version below the installed one. It keeps the libtorrent series of the installation: from 5.3.0
+  lt12 it installs the 5.2.4 *default* build, through the same name table (D-06).
+- **How it installs.** It installs in-process, elevated, with the same checks as an update: signature,
+  version resource, variant, architecture and clean close. Only the "no older version" check is lifted, and
+  only on this path. The Apply task, which has no arguments, still cannot downgrade anything.
+- **Held-back version.** Afterwards the rolled-back version goes into `config.json` as `skippedVersion`, for
+  every user. Automatic runs skip it until a newer release appears, or until an administrator runs
+  `config --skipped-version none`. A manual check can still install it. The settings window offers rollback
+  behind a confirmation.
+
+**D-41. Notify mode does not repeat itself.**
+The scheduled check announces a version once, then stays silent about it for 24 hours (`notifiedVersion` and
+`notifiedAt` in `user.json`). "Later" snoozes all checks for 24 hours. "Skip this version" is per user, while
+the rollback hold (D-40) is machine-wide. A newer version is announced at once.
+
+**D-42. Icon.**
+`tools/New-Icon.ps1` draws the icon (a circular arrow around a download arrow on a blue tile) with
+System.Drawing and writes `QbtAutoUpdate.ico` (16 to 256 px PNG frames) and the 256 px PNG used by toasts. The
+generated files are committed; the script is there to change them. Toasts use the PNG.

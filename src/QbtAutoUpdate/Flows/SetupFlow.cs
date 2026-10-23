@@ -69,6 +69,7 @@ internal static class SetupFlow
         RegisterTasks(paths, config);
         UninstallEntry.Write(paths, version);
         CreateStartMenuShortcut(paths, log);
+        Toasts.RegisterMachine(paths);
 
         context.Say($"QbtAutoUpdate {version} is installed in {paths.ProgramDir}.");
         context.Say($"Automatic updates {(config.Enabled ? "on" : "off")}: {Describe(config.Mode)}, at sign-in and every {config.CheckIntervalHours} h.");

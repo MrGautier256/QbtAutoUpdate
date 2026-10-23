@@ -21,6 +21,7 @@ internal static class UiFlow
     private const int ToggleMode = 303;
     private const int OpenLogs = 304;
     private const int Uninstall = 305;
+    private const int Rollback = 306;
 
     /// <summary>Double-click without arguments.</summary>
     public static int Run(FlowContext context)
@@ -42,21 +43,19 @@ internal static class UiFlow
 
         TaskDialogResult choice = TaskDialog.Show(new TaskDialogPage
         {
-            MainInstruction = upgrade ? $"Update QbtAutoUpdate to {SafeHttpClient.ProductVersion}" : "Keep qBittorrent up to date",
-            Content = DescribeInstall(install) + "\n\n"
-                      + "QbtAutoUpdate checks for new versions at sign-in and every 6 hours, verifies the official signature, "
-                      + "and keeps your libtorrent version (1.2 or 2.x). It runs only when needed, through the Task Scheduler.",
+            MainInstruction = upgrade ? T.Format("UiSetupUpgradeTitle", SafeHttpClient.ProductVersion) : T.Get("UiSetupTitle"),
+            Content = DescribeInstall(install) + "\n\n" + T.Get("UiSetupBody"),
             Icon = TaskDialogIcon.Information,
             RadioButtons =
             [
-                new(RadioAuto, "Update automatically: close qBittorrent cleanly, install, start it again"),
-                new(RadioNotify, "Ask me first with a notification"),
+                new(RadioAuto, T.Get("UiModeAuto")),
+                new(RadioNotify, T.Get("UiModeNotify")),
             ],
             DefaultRadioButton = configured && config.Mode == UpdateMode.Notify ? RadioNotify : RadioAuto,
-            Buttons = [new(InstallButton, upgrade ? "Update" : "Install", RequiresElevation: !Elevation.IsElevated)],
+            Buttons = [new(InstallButton, T.Get(upgrade ? "UiSetupUpgradeButton" : "UiSetupInstallButton"), RequiresElevation: !Elevation.IsElevated)],
             DefaultButton = InstallButton,
             Cancel = true,
-            Footer = "One administrator prompt now, none afterwards.",
+            Footer = T.Get("UiSetupFooter"),
         });
         if (choice.Button != InstallButton)
             return ExitCodes.Ok;
@@ -66,12 +65,12 @@ internal static class UiFlow
         {
             TaskDialogResult variant = TaskDialog.Show(new TaskDialogPage
             {
-                MainInstruction = "Which qBittorrent build do you use?",
-                Content = "QbtAutoUpdate could not tell from qbittorrent.exe. It will keep installing the build you choose.",
+                MainInstruction = T.Get("UiVariantTitle"),
+                Content = T.Get("UiVariantBody"),
                 RadioButtons =
                 [
-                    new(RadioLt2, "libtorrent 2.x: the default download since qBittorrent 5.3.0"),
-                    new(RadioLt12, "libtorrent 1.2: the \"lt12\" download (default before 5.3.0)"),
+                    new(RadioLt2, T.Get("UiVariantLt2")),
+                    new(RadioLt12, T.Get("UiVariantLt12")),
                 ],
                 DefaultRadioButton = RadioLt2,
                 Ok = true,
@@ -86,15 +85,8 @@ internal static class UiFlow
         if (code == Elevation.ErrorCancelled)
             return code;
         Inform(code == 0
-            ? new TaskDialogPage
-            {
-                MainInstruction = "QbtAutoUpdate is ready",
-                Content = "It works in the background from now on, without administrator prompts.\n\n"
-                          + "To change a setting, check now or uninstall, open QbtAutoUpdate from the Start menu.",
-                Icon = TaskDialogIcon.Information,
-                Ok = true,
-            }
-            : Failure("Setup failed", code, context.Paths.MachineLogsDir));
+            ? new TaskDialogPage { MainInstruction = T.Get("UiSetupDoneTitle"), Content = T.Get("UiSetupDoneBody"), Icon = TaskDialogIcon.Information, Ok = true }
+            : Failure(T.Get("UiSetupFailed"), code, context.Paths.MachineLogsDir));
         return code;
     }
 
@@ -120,13 +112,12 @@ internal static class UiFlow
                 CommandLinks = true,
                 Buttons =
                 [
-                    new(CheckNow, "Check for updates now"),
-                    new(ToggleEnabled, config.Enabled ? "Turn automatic updates off" : "Turn automatic updates on", RequiresElevation: !Elevation.IsElevated),
-                    new(ToggleMode, config.Mode == UpdateMode.Auto ? "Ask before updating\nShow a notification instead of installing by itself"
-                                                                   : "Update automatically\nClose qBittorrent cleanly, install, start it again",
-                        RequiresElevation: !Elevation.IsElevated),
-                    new(OpenLogs, "Open the log folder"),
-                    new(Uninstall, "Uninstall QbtAutoUpdate\nqBittorrent itself stays installed", RequiresElevation: !Elevation.IsElevated),
+                    new(CheckNow, T.Get("UiCheckNow")),
+                    new(ToggleEnabled, T.Get(config.Enabled ? "UiTurnOff" : "UiTurnOn"), RequiresElevation: !Elevation.IsElevated),
+                    new(ToggleMode, T.Get(config.Mode == UpdateMode.Auto ? "UiSwitchToNotify" : "UiSwitchToAuto"), RequiresElevation: !Elevation.IsElevated),
+                    new(Rollback, T.Get("UiRollback"), RequiresElevation: !Elevation.IsElevated),
+                    new(OpenLogs, T.Get("UiOpenLogs")),
+                    new(Uninstall, T.Get("UiUninstall"), RequiresElevation: !Elevation.IsElevated),
                 ],
                 Close = true,
             });
@@ -141,6 +132,9 @@ internal static class UiFlow
                     break;
                 case ToggleMode:
                     RunAsAdministrator(context, ["config", "--mode", config.Mode == UpdateMode.Auto ? "notify" : "auto"]);
+                    break;
+                case Rollback:
+                    RollbackDialog(context, install);
                     break;
                 case OpenLogs:
                     Directory.CreateDirectory(context.Paths.UserLogsDir);
@@ -165,16 +159,16 @@ internal static class UiFlow
 
     public static bool ConfirmUninstall() => TaskDialog.Show(new TaskDialogPage
     {
-        MainInstruction = "Uninstall QbtAutoUpdate?",
-        Content = "The scheduled tasks, settings and logs of QbtAutoUpdate are removed. qBittorrent itself stays installed.",
+        MainInstruction = T.Get("UiUninstallConfirmTitle"),
+        Content = T.Get("UiUninstallConfirmBody"),
         Icon = TaskDialogIcon.Warning,
-        Buttons = [new(TaskDialogPage.IdYes, "Uninstall", RequiresElevation: !Elevation.IsElevated)],
+        Buttons = [new(TaskDialogPage.IdYes, T.Get("UiUninstallButton"), RequiresElevation: !Elevation.IsElevated)],
         Cancel = true,
     }).Button == TaskDialogPage.IdYes;
 
     public static void ShowUninstallResult(int code, AppPaths paths) => Inform(code == 0
-        ? new TaskDialogPage { MainInstruction = "QbtAutoUpdate was removed", Content = "qBittorrent itself was not touched.", Icon = TaskDialogIcon.Information, Ok = true }
-        : Failure("Uninstall failed", code, paths.MachineLogsDir));
+        ? new TaskDialogPage { MainInstruction = T.Get("UiUninstallDoneTitle"), Content = T.Get("UiUninstallDoneBody"), Icon = TaskDialogIcon.Information, Ok = true }
+        : Failure(T.Get("UiUninstallFailed"), code, paths.MachineLogsDir));
 
     private static void CheckNowDialog(FlowContext context, MachineConfig config, UserSettings user, UpdateState state, InstallInfo install)
     {
@@ -182,7 +176,7 @@ internal static class UiFlow
         string? error = null;
         TaskDialog.Show(new TaskDialogPage
         {
-            MainInstruction = "Checking for updates...",
+            MainInstruction = T.Get("UiChecking"),
             Work = async () =>
             {
                 try
@@ -198,53 +192,106 @@ internal static class UiFlow
 
         if (plan is null)
         {
-            Inform(new TaskDialogPage { MainInstruction = "Could not check for updates", Content = error, Icon = TaskDialogIcon.Warning, Ok = true });
+            Inform(new TaskDialogPage { MainInstruction = T.Get("UiCheckFailed"), Content = error, Icon = TaskDialogIcon.Warning, Ok = true });
             return;
         }
         if (!plan.IsReady)
         {
-            Inform(new TaskDialogPage { MainInstruction = plan.Outcome == PlanOutcome.UpToDate ? "qBittorrent is up to date" : "No update to install", Content = plan.Message, Icon = TaskDialogIcon.Information, Ok = true });
+            Inform(new TaskDialogPage
+            {
+                MainInstruction = T.Get(plan.Outcome == PlanOutcome.UpToDate ? "UiUpToDate" : "UiNothingToInstall"),
+                Content = plan.Message,
+                Icon = TaskDialogIcon.Information,
+                Ok = true,
+            });
             return;
         }
 
         TaskDialogResult confirm = TaskDialog.Show(new TaskDialogPage
         {
-            MainInstruction = $"qBittorrent {plan.Latest!.Version} is available",
-            Content = $"Installed: {install.Version} ({plan.Variant!.Value.Describe()}).\n\n"
-                      + "QbtAutoUpdate will close qBittorrent cleanly, install the official, verified update and start qBittorrent again.",
-            Buttons = [new(TaskDialogPage.IdYes, "Update now")],
+            MainInstruction = T.Format("ToastAvailableTitle", plan.Latest!.Version),
+            Content = T.Format("ToastAvailableBody", install.Version?.ToString() ?? "?", plan.Variant!.Value.Describe()),
+            Buttons = [new(TaskDialogPage.IdYes, T.Get("ToastUpdateNow"))],
             Cancel = true,
             Icon = TaskDialogIcon.Information,
         });
         if (confirm.Button != TaskDialogPage.IdYes)
             return;
 
+        RunWithProgress(context, T.Format("UiUpdating", plan.Latest.Version),
+            work => UpdateFlow.ExecuteAsync(work, plan, config, user, CancellationToken.None),
+            ok => T.Format(ok ? "UiUpdated" : "UiUpdateIncomplete", plan.Latest.Version));
+    }
+
+    private static void RollbackDialog(FlowContext context, InstallInfo install)
+    {
+        TaskDialogResult confirm = TaskDialog.Show(new TaskDialogPage
+        {
+            MainInstruction = T.Get("UiRollbackConfirmTitle"),
+            Content = T.Format("UiRollbackConfirmBody", install.Version?.ToString() ?? "?"),
+            Icon = TaskDialogIcon.Warning,
+            Buttons = [new(TaskDialogPage.IdYes, T.Get("UiRollbackButton"), RequiresElevation: !Elevation.IsElevated)],
+            Cancel = true,
+        });
+        if (confirm.Button != TaskDialogPage.IdYes)
+            return;
+
+        if (Elevation.IsElevated)
+        {
+            RunWithProgress(context, T.Get("UiRollingBack"),
+                work => RollbackFlow.RunAsync(work, CancellationToken.None),
+                ok => T.Get(ok ? "UiRollbackDone" : "UiRollbackFailed"));
+            return;
+        }
+
+        int code = 0;
+        TaskDialog.Show(new TaskDialogPage
+        {
+            MainInstruction = T.Get("UiRollingBack"),
+            Work = () => Task.Run(() => code = Elevation.RelaunchElevated(["rollback"])),
+        });
+        if (code == Elevation.ErrorCancelled)
+            return;
+        UpdateState state = UpdateState.Load(context.Paths.StateFile, []);
+        Inform(new TaskDialogPage
+        {
+            MainInstruction = T.Get(code == 0 ? "UiRollbackDone" : "UiRollbackFailed"),
+            Content = code == 0 && state.LastInstall is { } last ? $"qBittorrent {last.Version} ({last.Variant?.Describe()})" : T.Format("UiExitCode", code, context.Paths.UserLogsDir),
+            Icon = code == 0 ? TaskDialogIcon.Information : TaskDialogIcon.Warning,
+            Ok = true,
+        });
+    }
+
+    /// <summary>Runs a flow behind a progress window, then shows everything it said.</summary>
+    private static void RunWithProgress(FlowContext context, string title, Func<FlowContext, Task<int>> flow, Func<bool, string> resultTitle)
+    {
         using var messages = new StringWriter(CultureInfo.CurrentCulture);
         using FlowContext work = FlowContext.Create(context.Command, messages);
         int code = ExitCodes.Error;
         TaskDialog.Show(new TaskDialogPage
         {
-            MainInstruction = $"Updating qBittorrent to {plan.Latest.Version}...",
-            Content = "qBittorrent will be closed and started again. This takes a minute or two.",
+            MainInstruction = title,
+            Content = T.Get("UiProgressBody"),
             Work = async () =>
             {
                 try
                 {
-                    code = await UpdateFlow.ExecuteAsync(work, plan, config, user, CancellationToken.None);
+                    code = await flow(work);
                 }
                 catch (Exception ex)
                 {
                     work.Log.Error(ex.ToString());
-                    messages.WriteLine("Error: " + ex.Message);
+                    messages.WriteLine(ex.Message);
                 }
             },
         });
 
+        bool ok = code == ExitCodes.Ok;
         Inform(new TaskDialogPage
         {
-            MainInstruction = code == ExitCodes.Ok ? $"qBittorrent {plan.Latest.Version} is installed" : "The update did not complete",
+            MainInstruction = resultTitle(ok),
             Content = messages.ToString().Trim(),
-            Icon = code == ExitCodes.Ok ? TaskDialogIcon.Information : TaskDialogIcon.Warning,
+            Icon = ok ? TaskDialogIcon.Information : TaskDialogIcon.Warning,
             Ok = true,
         });
     }
@@ -268,9 +315,9 @@ internal static class UiFlow
 
     private static string DescribeInstall(InstallInfo install) => install.Kind switch
     {
-        InstallKind.Installed => $"qBittorrent {install.Version} ({install.DetectedVariant?.Describe() ?? "libtorrent version unknown"}) is installed in {install.InstallDir}.",
-        InstallKind.NotInstalled => "qBittorrent is not installed yet. QbtAutoUpdate will keep it up to date once it is.",
-        _ => (install.Notes.Count > 0 ? install.Notes[0] : "This qBittorrent installation is not supported.") + " QbtAutoUpdate will not touch it.",
+        InstallKind.Installed => T.Format("UiInstalled", install.Version, install.DetectedVariant?.Describe() ?? T.Get("UiVariantUnknownShort"), install.InstallDir),
+        InstallKind.NotInstalled => T.Get("UiNotInstalled"),
+        _ => (install.Notes.Count > 0 ? install.Notes[0] : T.Get("PlanUnsupported")) + " " + T.Get("UiNotTouched"),
     };
 
     private static string DescribeSettings(InstallInfo install, MachineConfig config, UpdateState state, ScheduledTaskInfo? check)
@@ -280,20 +327,22 @@ internal static class UiFlow
             DescribeInstall(install),
             "",
             config.Enabled
-                ? $"Automatic updates: on. {char.ToUpperInvariant(SetupFlow.Describe(config.Mode)[0])}{SetupFlow.Describe(config.Mode)[1..]}, at sign-in and every {config.CheckIntervalHours} h."
-                : "Automatic updates: off.",
+                ? T.Format(config.Mode == UpdateMode.Auto ? "UiStatusOnAuto" : "UiStatusOnNotify", config.CheckIntervalHours)
+                : T.Get("UiStatusOff"),
         };
+        if (config.SkippedVersion is { } held)
+            lines.Add(T.Format("UiHeldBack", held));
         if (check?.LastRun is { } lastRun)
-            lines.Add($"Last check: {lastRun.ToString("g", CultureInfo.CurrentCulture)}.");
+            lines.Add(T.Format("UiLastCheck", lastRun.ToString("g", CultureInfo.CurrentCulture)));
         if (state.LastAttempt is { } attempt)
-            lines.Add($"Last update attempt: {attempt.At.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)}, {attempt.Result}: {attempt.Message}");
+            lines.Add(T.Format("UiLastAttempt", attempt.At.ToLocalTime().ToString("g", CultureInfo.CurrentCulture), attempt.Message));
         return string.Join("\n", lines);
     }
 
     private static TaskDialogPage Failure(string title, int code, string logs) => new()
     {
         MainInstruction = title,
-        Content = $"Exit code {code}. Details are in the log folder:\n{logs}",
+        Content = T.Format("UiExitCode", code, logs),
         Icon = TaskDialogIcon.Error,
         Ok = true,
     };

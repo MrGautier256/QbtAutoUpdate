@@ -5,9 +5,12 @@ using QbtAutoUpdate.Platform;
 namespace QbtAutoUpdate.Flows;
 
 /// <summary>Setting changes given on the command line of "setup" or "config".</summary>
-internal sealed record ConfigChanges(bool? Enabled, UpdateMode? Mode, int? IntervalHours, VariantSetting? Variant)
+internal sealed record ConfigChanges(
+    bool? Enabled, UpdateMode? Mode, int? IntervalHours, VariantSetting? Variant,
+    QbtVersion? SkippedVersion = null, bool ClearSkippedVersion = false)
 {
-    public bool IsEmpty => Enabled is null && Mode is null && IntervalHours is null && Variant is null;
+    public bool IsEmpty => Enabled is null && Mode is null && IntervalHours is null && Variant is null
+                           && SkippedVersion is null && !ClearSkippedVersion;
 
     public MachineConfig ApplyTo(MachineConfig config) => config with
     {
@@ -15,6 +18,7 @@ internal sealed record ConfigChanges(bool? Enabled, UpdateMode? Mode, int? Inter
         Mode = Mode ?? config.Mode,
         CheckIntervalHours = IntervalHours ?? config.CheckIntervalHours,
         Variant = Variant ?? config.Variant,
+        SkippedVersion = ClearSkippedVersion ? null : SkippedVersion ?? config.SkippedVersion,
     };
 
     public static ConfigChanges? Parse(CommandLine command, out string? error)
@@ -50,7 +54,23 @@ internal sealed record ConfigChanges(bool? Enabled, UpdateMode? Mode, int? Inter
             else
                 error ??= "--interval must be a number of hours between 1 and 168.";
         }
-        return error is null ? new ConfigChanges(enabled, mode, interval, variant) : null;
+        QbtVersion? skipped = null;
+        bool clearSkipped = false;
+        switch (command.Get("--skipped-version"))
+        {
+            case null:
+                break;
+            case "none":
+                clearSkipped = true;
+                break;
+            case var value when QbtVersion.TryParse(value, out QbtVersion version):
+                skipped = version;
+                break;
+            case var value:
+                error ??= $"--skipped-version must be a version such as 5.3.0, or none, not '{value}'.";
+                break;
+        }
+        return error is null ? new ConfigChanges(enabled, mode, interval, variant, skipped, clearSkipped) : null;
     }
 
     private static T? Fail<T>(ref string? error, string message) where T : struct

@@ -6,6 +6,7 @@
     <AssemblyName>QbtAutoUpdate</AssemblyName>
     <RootNamespace>QbtAutoUpdate</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\QbtAutoUpdate.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <SatelliteResourceLanguages>en;fr</SatelliteResourceLanguages>
     <!-- Required by the [LibraryImport] source generator (P/Invoke without runtime marshalling). -->
@@ -29,6 +30,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\qbittorrent-5B7CC9A2.asc" LogicalName="QbtAutoUpdate.qbittorrent-5B7CC9A2.asc" />
+    <!-- Written next to the exe by setup: the notification icon (AppUserModelId IconUri). -->
+    <EmbeddedResource Include="Resources\QbtAutoUpdate.png" LogicalName="QbtAutoUpdate.QbtAutoUpdate.png" />
   </ItemGroup>
 
   <ItemGroup>

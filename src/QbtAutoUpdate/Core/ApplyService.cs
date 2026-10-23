@@ -67,7 +67,7 @@ public sealed class ApplyService(
         if (expected is null)
         {
             return Finish(state, pair, version, null, before,
-                new InstallOutcome(InstallStatus.Refused, "The libtorrent series of the installed qBittorrent is unknown; set 'variant' in the settings."));
+                new InstallOutcome(InstallStatus.Refused, T.Get("PlanVariantUnknown")));
         }
 
         string shortcut = Path.Combine(publicDesktop, DesktopShortcutName);

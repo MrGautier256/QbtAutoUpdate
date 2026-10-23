@@ -1,12 +1,14 @@
+using System.Globalization;
 using QbtAutoUpdate.Core;
 using QbtAutoUpdate.Platform;
 
 namespace QbtAutoUpdate.Flows;
 
 /// <summary>
-/// User-side update (spec §4.3): download and verify, close qBittorrent cleanly, back up its
-/// settings, install, start it again. Until the SYSTEM task exists (phase 3), installing requires
-/// running this command elevated by hand: the "development mode" of the spec.
+/// User-side update (spec §4.3): download and verify, close qBittorrent cleanly, back up its settings,
+/// hand the installer to the SYSTEM task (or, in development mode, install it directly), start
+/// qBittorrent again. Runs without a console (scheduled task, notification click) report through
+/// notifications.
 /// </summary>
 internal static class UpdateFlow
 {
@@ -26,16 +28,25 @@ internal static class UpdateFlow
         return await ExecuteAsync(context, plan, config, user, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<int> ExecuteAsync(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user, CancellationToken cancellationToken)
+    /// <param name="rollback">
+    /// Installs an older release: only from an elevated "rollback", directly, never through the SYSTEM task
+    /// (which refuses downgrades by design).
+    /// </param>
+    public static async Task<int> ExecuteAsync(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user,
+        CancellationToken cancellationToken, bool rollback = false)
     {
         bool dryRun = context.Command.DryRun;
+        QbtVersion target = plan.Latest!.Version;
+        if (rollback && !Elevation.IsElevated)
+            throw new InvalidOperationException("A rollback runs elevated.");
+
         // The SYSTEM "Apply" task installs. Without it (QbtAutoUpdate not set up), only an elevated run can
         // install, by itself: the development mode of D-23. Decided before anything is touched.
-        ScheduledTasks? tasks = ApplyHandoff.TryConnect(context.Log);
+        ScheduledTasks? tasks = rollback ? null : ApplyHandoff.TryConnect(context.Log);
         bool developmentMode = tasks is null && Elevation.IsElevated;
         if (!dryRun && tasks is null && !developmentMode)
         {
-            context.Say("QbtAutoUpdate is not set up on this PC: open QbtAutoUpdate.exe to install it. Nothing was changed.");
+            context.Say(T.Get("UpdNotSetUp"));
             return ExitCodes.NotAvailableYet;
         }
 
@@ -45,21 +56,25 @@ internal static class UpdateFlow
         try
         {
             // 4. Download and verify first: fail before touching qBittorrent.
-            context.Say($"Downloading {release.Installer!.Name} ({FormatSize(release.Installer.Size)}) and its signature...");
+            context.Say(T.Format("UpdDownloading", release.Installer!.Name, FormatSize(release.Installer.Size)));
             DownloadedRelease downloaded = await context.Downloader.DownloadAsync(release, staging, cancellationToken).ConfigureAwait(false);
             PgpResult verdict = PgpVerifier.CreateOfficial().VerifyFile(downloaded.InstallerPath, downloaded.SignaturePath, DateTimeOffset.UtcNow);
             if (!verdict.IsValid)
             {
-                context.Say(DescribeFailure(verdict));
+                string failure = DescribeFailure(verdict);
+                context.Say(failure);
                 context.Log.Error($"Signature check failed for {downloaded.InstallerFileName}: {verdict.Verdict} ({verdict.Detail}).");
+                context.NotifyFailure(config, user, failure);
                 return ExitCodes.VerificationFailed;
             }
-            context.Say($"Signature OK: {verdict.Detail}, signed {verdict.SignedAt:yyyy-MM-dd HH:mm} UTC.");
+            context.Say(T.Format("UpdSignatureOk", PgpVerifier.OfficialFingerprint[^8..],
+                verdict.SignedAt?.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)));
 
             using SessionInstances instances = SessionInstances.Capture(context.Log);
             if (instances.BlockingReason is { } blocking)
             {
-                context.Say(blocking + " Nothing was changed.");
+                context.Say(T.Format("UpdNothingChanged", blocking));
+                context.NotifyCloseFailed(config, user, target, blocking);
                 return ExitCodes.Busy;
             }
 
@@ -75,6 +90,7 @@ internal static class UpdateFlow
             if (!closedAll)
             {
                 SessionInstances.Relaunch(closed, plan.Install.ExePath, context.Log);
+                context.NotifyCloseFailed(config, user, target, closeMessage);
                 return ExitCodes.Busy;
             }
 
@@ -87,14 +103,29 @@ internal static class UpdateFlow
                 : new InstallerRunner(
                         PgpVerifier.CreateOfficial(), new SystemInstallEnvironment(), context.Log, ProcessTools.FindQbittorrent,
                         new InstallerProcess(), SystemInfo.NativeArchitecture(), () => DateTimeOffset.UtcNow)
-                    .Install(new InstallerFile(downloaded.InstallerPath, downloaded.SignaturePath, downloaded.InstallerFileName), plan.Install, plan.Variant!.Value);
+                    .Install(new InstallerFile(downloaded.InstallerPath, downloaded.SignaturePath, downloaded.InstallerFileName), plan.Install,
+                        plan.Variant!.Value, allowDowngrade: rollback);
             context.Say(outcome.Message);
 
             // 7. Start again what was running, whatever the outcome.
             if (closed.Count > 0)
             {
                 int started = SessionInstances.Relaunch(closed, plan.Install.ExePath, context.Log);
-                context.Say(started == closed.Count ? "qBittorrent started again." : "qBittorrent could not be started again: start it yourself.");
+                context.Say(T.Get(started == closed.Count ? "UpdRestarted" : "UpdRestartFailed"));
+            }
+
+            // 8. Report.
+            switch (outcome.Status)
+            {
+                case InstallStatus.Installed:
+                    context.NotifyUpdated(config, target, plan.Variant!.Value);
+                    break;
+                case InstallStatus.Busy:
+                    context.NotifyCloseFailed(config, user, target, outcome.Message);
+                    break;
+                default:
+                    context.NotifyFailure(config, user, outcome.Message);
+                    break;
             }
 
             return outcome.Status switch
@@ -113,15 +144,13 @@ internal static class UpdateFlow
 
     internal static string DescribeFailure(PgpResult result) => result.Verdict switch
     {
-        PgpVerdict.UnknownKey =>
-            "The installer is signed with a key QbtAutoUpdate does not know. qBittorrent may have changed its signing key: update QbtAutoUpdate. Nothing was installed.",
-        PgpVerdict.BadSignature =>
-            "The downloaded installer does not match its signature (altered or corrupted download). Nothing was installed.",
-        _ => $"The installer signature was refused ({result.Verdict}: {result.Detail}). Nothing was installed.",
+        PgpVerdict.UnknownKey => T.Get("UpdUnknownKey"),
+        PgpVerdict.BadSignature => T.Get("UpdBadSignature"),
+        _ => T.Format("UpdSignatureRefused", $"{result.Verdict}: {result.Detail}"),
     };
 
     internal static string FormatSize(long? bytes) =>
-        bytes is { } b ? $"{b / (1024.0 * 1024.0):0.0} MB" : "size unknown";
+        bytes is { } b ? $"{b / (1024.0 * 1024.0):0.0} MB" : "?";
 
     private static void DescribeDryRun(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user,
         SessionInstances instances, DownloadedRelease downloaded, bool developmentMode)
@@ -146,14 +175,14 @@ internal static class UpdateFlow
                 : "[dry-run] QbtAutoUpdate is not set up on this PC, so nothing could be installed yet.");
     }
 
-    private static void BackUp(FlowContext context, UpdatePlan plan, MachineConfig config, List<RunningQbt> closed)
+    internal static void BackUp(FlowContext context, UpdatePlan plan, MachineConfig config, List<RunningQbt> closed)
     {
         try
         {
             List<QbtProfile> profiles = ProfilesToBackUp(plan, closed).OfType<QbtProfile>().ToList();
             string? folder = ConfigBackup.Create(profiles, plan.Install.Version!.Value, context.Paths.BackupsDir, config.BackupTorrents, DateTimeOffset.Now, context.Log);
             if (folder is not null)
-                context.Say($"Settings backed up to {folder}.");
+                context.Say(T.Format("UpdBackedUp", folder));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -173,7 +202,7 @@ internal static class UpdateFlow
             .DistinctBy(p => p?.ConfigDir, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static void ClearDirectory(string path, bool deleteItself = false)
+    internal static void ClearDirectory(string path, bool deleteItself = false)
     {
         try
         {
