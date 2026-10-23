@@ -3,7 +3,7 @@ using QbtAutoUpdate.Platform;
 
 namespace QbtAutoUpdate.Flows;
 
-/// <summary>Services shared by the user-side flows (status, check, update).</summary>
+/// <summary>Services shared by the flows.</summary>
 internal sealed class FlowContext : IDisposable
 {
     private readonly FileLog _fileLog;
@@ -32,15 +32,24 @@ internal sealed class FlowContext : IDisposable
     public Downloader Downloader { get; }
     public string LogFile => _fileLog.CurrentFile;
 
-    public static FlowContext Create(CommandLine command)
+    /// <param name="output">Where user-facing messages go: the console by default, a buffer for the dialogs.</param>
+    public static FlowContext Create(CommandLine command, TextWriter? output = null)
     {
         AppPaths paths = AppPaths.ForCurrentUser();
-        var fileLog = new FileLog(paths.UserLogsDir, command.Verbose ? LogLevel.Debug : LogLevel.Info);
-        ILog log = command.Verbose ? new CompositeLog(fileLog, new ConsoleLog()) : fileLog;
-        return new FlowContext(command, paths, fileLog, log, Console.Out);
+        // Machine operations log to %ProgramData% once elevated; a non-elevated process never creates
+        // that folder (a user-created folder there would not be trusted by the SYSTEM side).
+        bool machine = command.Verb is "apply" or "setup" or "config" && (Elevation.IsElevated || Elevation.IsSystem);
+        var fileLog = new FileLog(machine ? paths.MachineLogsDir : paths.UserLogsDir, command.Verbose ? LogLevel.Debug : LogLevel.Info);
+        ILog log = command.Verbose && output is null ? new CompositeLog(fileLog, new ConsoleLog()) : fileLog;
+        return new FlowContext(command, paths, fileLog, log, output ?? Console.Out);
     }
 
-    public InstallInfo DetectInstall() => new InstallDetector(new SystemInstallEnvironment()).Detect();
+    /// <summary>Stops writing the log file (uninstall deletes the folder it lives in).</summary>
+    public void StopFileLogging() => _fileLog.Enabled = false;
+
+    /// <summary>Detects qBittorrent, including an install interrupted by a power cut (state.json).</summary>
+    public InstallInfo DetectInstall(UpdateState state) =>
+        InstallInfoRecovery.Recover(new InstallDetector(new SystemInstallEnvironment()).Detect(), state);
 
     public UpdatePlanner CreatePlanner(UserSettings user) => new(
         Versions, SourceForge, Log, SystemInfo.NativeArchitecture(), () => SystemInfo.IsMeteredConnection(Log), () => DateTimeOffset.Now,

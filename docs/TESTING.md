@@ -60,14 +60,83 @@ real key, unpacked with 7-Zip, and their libtorrent series read correctly; detec
 Observed on the way: each start of 5.2.4 logs a 404 for the dead FossHub feed, yet still announces 5.3.0
 through `versions.json` with a modal dialog (FINDINGS §2).
 
+### 2026-10-23: phase 3, Windows Sandbox (Windows 11 26100, French display language)
+
+Scenario: `sandbox\Start-Scenario.ps1` (see `sandbox\README.md`).
+
+**Run 1: 17 failures.** `setup` crashed when registering the tasks: source-generated COM raised
+`FileNotFoundException` for the not-yet-existing `\QbtAutoUpdate` folder, and only `COMException` was caught
+(FINDINGS §8b). Everything after it failed as a consequence. Fixed, with a regression test.
+
+**Run 2: 6 failures.** The whole update worked. The failures were scenario bugs:
+- the qBittorrent log (UTF-8 without BOM) was read as ANSI by Windows PowerShell 5.1;
+- `net user` prompted because of a password longer than 14 characters.
+
+**Run 3: default build, 5.2.3 → 5.3.0: 34/34 PASS.** Configuration:
+- qBittorrent 5.2.3 default build (libtorrent 1.2), started minimized to the tray (window never shown);
+- close to tray, confirm on exit, start with Windows, Public desktop shortcut;
+- an active torrent added with a `.torrent` argument.
+
+Results:
+- `setup --quiet --mode auto`: exe, tasks, ACLs, *Installed apps* entry and Start menu shortcut in place.
+- The first check started by setup did the whole update in 14 s:
+  - download from two mirrors (2 s) and signature OK;
+  - Restart Manager close (2 s);
+  - settings backup;
+  - SYSTEM Apply task install (8 s);
+  - restart.
+- qBittorrent's own log: shutdown initiated, resume data saved, session terminated, ready to exit, then
+  5.3.0 started and logged "torrent restored". No confirmation dialog appeared despite *confirm on exit*
+  with an active torrent.
+- **5.3.0 lt12** installed: the libtorrent 1.2 series was kept, not switched to the new 2.1 default.
+- qBittorrent restarted without the `.torrent` argument and was still running 50 s after the task had ended.
+- Public desktop shortcut and HKCU `Run` value intact; settings backed up.
+- As a new standard account:
+  - `work\` and `config.json` could not be written;
+  - files could be dropped in `inbox\`, and the Apply task could be started (`schtasks /run`);
+  - a tampered installer was refused ("BadSignature") and the inbox emptied.
+- `uninstall --quiet`: no task, folder, registry entry or shortcut left; qBittorrent untouched.
+
+**Run 4: lt20 build, 5.2.3 → 5.3.0: 34/34 PASS.** Same scenario starting from the 5.2.3 `lt20`
+build (libtorrent 2.0). The update installed the 5.3.0 **default** build (libtorrent 2.1), which keeps the
+2.x series. Every other check matches run 3.
+
+(One attempt in between left an empty results folder: it was started while the previous sandbox was still
+shutting down, and Windows Sandbox runs one instance at a time. The launcher now waits.)
+
+**Runs 5–7: the windows ("ui" variant).** The same machine is driven through UI Automation instead of
+`setup --quiet`. Buttons are pressed by their TaskDialog ids (`CommandButton_<id>`, `CommandLink_<id>`,
+`RadioButton_<id>`), independent of the display language.
+- Run 5 found the ids differ from Win32 control ids.
+- Run 6 found the command link prefix.
+- **Run 7: all checks PASS:**
+  - Started like a double-click, the exe opened the setup window. It shows the detected qBittorrent 5.2.3
+    (libtorrent 1.2) and the two modes.
+  - "Ask me first" then "Install" gave the "QbtAutoUpdate is ready" window. `config.json` holds `notify`,
+    and the first check installed nothing.
+  - The installed exe opened the settings window. Its status was correct: notify mode, every 6 h, last check
+    time.
+  - "Check for updates now" offered "qBittorrent 5.3.0 is available". "Update now" showed the progress
+    window, then the result listing each step, and qBittorrent 5.3.0 lt12 was installed.
+  - All checks of run 3 (clean shutdown, restart, shortcut, Run key, standard account, tampered installer,
+    uninstall) pass again.
+
+ACLs as applied (from `icacls`):
+- `%ProgramData%\QbtAutoUpdate`: protected; SYSTEM and Administrators full, Users read and execute.
+- `inbox`: Users `(S,WD,X,RA)` (create files only), CREATOR OWNER `(OI)(IO)(F)`.
+- `work`: SYSTEM and Administrators only.
+- `Program Files\QbtAutoUpdate`: inherits Program Files.
+
 ### Not validated yet
 
-- **Clean shutdown with torrents loaded**: resume data intact and no recheck after restart, and a long
-  shutdown (many torrents, tracker announces). The machine above had no torrent.
-- **Confirm on exit** with active torrents: per FINDINGS §7.2 the Restart Manager path bypasses the
-  confirmation dialog; to be checked in Sandbox.
-- **Start minimized** (window never shown since start-up), and the **WebUI** shutdown path against a real
-  qBittorrent.
+- **A long shutdown** (many torrents, tracker announces) and resume data checked torrent by torrent.
+- **The WebUI** shutdown path against a real qBittorrent.
+- **UAC prompts and flashing windows**: Windows Sandbox runs with UAC off, so "no prompt after setup" and
+  "no visible window" need a regular PC or VM with UAC on (phase 5). The same goes for the non-elevated
+  path where a settings change relaunches the exe with "runas".
+- **A standard account running the whole update** in its own session (signed in interactively). Its parts
+  are covered: inbox write, Apply task start, ACLs.
+- **ARM64**: the arm64 build is published but not run yet.
 - **A real install in development mode** (`update` from an elevated terminal): installs qBittorrent, so only
   in Sandbox or a VM.
 - Restart of qBittorrent from an elevated process through the shell token.

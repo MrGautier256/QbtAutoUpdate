@@ -12,11 +12,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Release artifacts: one self-contained file per architecture (dotnet publish -r win-x64). -->
+  <!-- Release artifacts: one self-contained file per architecture (dotnet publish -r win-x64).
+       No IncludeNativeLibrariesForSelfExtract: the SYSTEM task must never load DLLs extracted to a
+       writable temp folder (docs/DECISIONS.md D-29). -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
   </PropertyGroup>

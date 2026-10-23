@@ -74,9 +74,11 @@ public sealed class FileLog : ILog, IDisposable
 
     public string CurrentFile => Path.Combine(_directory, BaseName + ".log");
 
+    public bool Enabled { get; set; } = true;
+
     public void Write(LogLevel level, string message)
     {
-        if (level < _minLevel)
+        if (level < _minLevel || !Enabled)
             return;
 
         string line = string.Create(

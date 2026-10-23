@@ -202,7 +202,72 @@ warning. The README will explain the risk (lost resume data, rechecks).
 anything. Users can check that the clean shutdown works with their own settings (tray, confirmation, many
 torrents), and the Sandbox scenario uses it to validate FINDINGS §7.2 separately from installation.
 
-## Decided ahead of later phases
+## Scheduled tasks, SYSTEM side, setup (phase 3)
 
-- **apply (phase 3).** Wraps `InstallerRunner` (D-23) with the inbox, the protected `work\` copy and
-  `state.json`. The post-install variant check (FINDINGS §6.3) is already in `InstallerRunner`.
+**D-29. No native self-extraction.**
+`IncludeNativeLibrariesForSelfExtract` is off. It would extract native DLLs into `%TEMP%`, which for the
+SYSTEM task is a folder where users can write: a DLL planting risk. Checked: the self-contained single-file
+publish has no native library left outside the exe. If a future dependency brings one, it shows up as an
+extra file next to the exe, and the release workflow must fail on that.
+
+**D-30. Source-generated COM instead of the TaskScheduler package.**
+Task Scheduler 2.0 and `IShellLinkW` are called through `[GeneratedComInterface]` (ComWrappers), which works
+trimmed, unlike `[ComImport]` and the dahall `TaskScheduler` package that relies on it. Only the methods
+actually called have real signatures; the other vtable slots are placeholders. The order comes from the
+Windows SDK headers (`taskschd.h`, `shobjidl_core.h`), and live tests read a Task Scheduler folder and
+round-trip a `.lnk`. Passing `VARIANT`s (`ComVariant`) by value requires
+`[assembly: DisableRuntimeMarshalling]`, which is harmless since every P/Invoke is source-generated. Tasks are
+registered from XML. Accounts are given as SIDs (`S-1-5-32-545`, `S-1-5-18`), never by localized names.
+
+**D-31. Inbox protocol.**
+The user side writes `<32-hex request id>__<installer name>` plus `.asc`. Users may only *create* files in
+the inbox (no listing, no folders); `CREATOR OWNER` keeps control of their own files, so users cannot read or
+replace each other's requests. "apply" picks the newest valid pair (regular files, known name, size limits),
+deletes everything else unread, copies the pair into `work\` (SYSTEM and Administrators only), deletes the
+inbox files, and verifies and runs only the copy. The request id goes back in `state.json`, so the requester
+recognizes its own answer; a request that another, newer one superseded gets "no answer" and its files are
+taken back.
+
+**D-32. The SYSTEM side trusts nothing it did not create.**
+- "apply" refuses to run if, as SYSTEM, it is not `%ProgramFiles%\QbtAutoUpdate\QbtAutoUpdate.exe`.
+- It also refuses if a non-administrator group can write in that folder.
+- It refuses when the data folders are junctions or not owned by SYSTEM or Administrators.
+- Setup removes a pre-existing `%ProgramData%\QbtAutoUpdate` it does not trust, and empties `work\` and
+  `inbox\`.
+- A non-elevated process never creates that folder: logs of non-elevated runs go to the user's own folder.
+
+**D-33. `state.json`: last install and last attempt.**
+`lastInstall` (successful installs only) remembers the variant. `lastAttempt` records every apply: result
+(`installed`, `refused`, `busy`, `failed`, `not-verified`), message, request id, version, variant, folder and
+exit code. `installing` is written just before the installer runs. Found later with no qBittorrent left
+(the old uninstaller had already run when the PC stopped), it lets the next check *and* apply rebuild the
+installation in the recorded folder and variant (`InstallInfoRecovery`, spec §6).
+
+**D-34. Which channel installs.**
+When the Apply task exists, every update goes through it, elevated or not, for one code path. Without
+it, an elevated run installs directly (development mode, D-23), and a non-elevated run stops before closing
+anything.
+
+**D-35. Setup details.**
+- Re-running setup upgrades or repairs in place. A running older exe is renamed (`.old-<ticks>`, deleted by
+  the next setup), because a running image can be renamed but not deleted.
+- Without `--variant`, and when the installed variant cannot be read, `--quiet` stores libtorrent 2.x (the
+  spec's default) explicitly; the window asks instead.
+- Setup adds QbtAutoUpdate to *Installed apps* ("Modify" opens the settings window) and to the common Start
+  menu, then starts the Check task once.
+- The first scheduled run is one interval after setup, with a random delay of up to 10 minutes.
+- `config` changes settings later and re-registers the Check task (interval, on/off).
+
+**D-36. Uninstall removes the running exe too.**
+It deletes the tasks, the *Installed apps* entry, the Start menu shortcut, the machine data, this user's data
+(logs kept with `--keep-logs`), then the binaries. The exe that is running cannot be deleted: it is moved
+to the temporary folder (same volume) and scheduled for deletion at the next restart
+(`MOVEFILE_DELAY_UNTIL_REBOOT`), so Program Files is clean at once. Other users' `%LOCALAPPDATA%` data cannot
+be reached and is documented.
+
+**D-37. Windows Sandbox scenario in PowerShell.**
+The spec bans PowerShell from the *product*. The test tooling in `sandbox\` is PowerShell (Windows
+PowerShell 5.1 compatible, pure ASCII): `Start-Scenario.ps1` publishes the exe, fetches the official
+installers, writes the `.wsb` with absolute paths (none in the repository) and starts the sandbox.
+`Run-Scenario.ps1` runs inside, writes PASS/FAIL lines and evidence to a mapped folder, and shuts the sandbox
+down.

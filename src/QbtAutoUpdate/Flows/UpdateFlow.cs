@@ -14,7 +14,7 @@ internal static class UpdateFlow
     public static async Task<int> RunAsync(FlowContext context, CancellationToken cancellationToken)
     {
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
-        InstallInfo install = context.DetectInstall();
+        InstallInfo install = context.DetectInstall(state);
         UpdatePlan plan = await context.CreatePlanner(user)
             .PlanAsync(install, config, user, state, new PlanOptions(Manual: true), cancellationToken)
             .ConfigureAwait(false);
@@ -29,11 +29,13 @@ internal static class UpdateFlow
     public static async Task<int> ExecuteAsync(FlowContext context, UpdatePlan plan, MachineConfig config, UserSettings user, CancellationToken cancellationToken)
     {
         bool dryRun = context.Command.DryRun;
-        bool developmentMode = Environment.IsPrivilegedProcess;
-        if (!dryRun && !developmentMode)
+        // The SYSTEM "Apply" task installs. Without it (QbtAutoUpdate not set up), only an elevated run can
+        // install, by itself: the development mode of D-23. Decided before anything is touched.
+        ScheduledTasks? tasks = ApplyHandoff.TryConnect(context.Log);
+        bool developmentMode = tasks is null && Elevation.IsElevated;
+        if (!dryRun && tasks is null && !developmentMode)
         {
-            context.Say("Installing needs the QbtAutoUpdate scheduled task, which arrives with 'setup'. "
-                        + "For development, run this command from an elevated terminal.");
+            context.Say("QbtAutoUpdate is not set up on this PC: open QbtAutoUpdate.exe to install it. Nothing was changed.");
             return ExitCodes.NotAvailableYet;
         }
 
@@ -79,11 +81,13 @@ internal static class UpdateFlow
             if (config.BackupConfig)
                 BackUp(context, plan, config, closed);
 
-            // 6. Install. Development mode: this elevated process runs the installer itself.
-            InstallOutcome outcome = new InstallerRunner(
-                    PgpVerifier.CreateOfficial(), new SystemInstallEnvironment(), context.Log, ProcessTools.FindQbittorrent,
-                    new InstallerProcess(), SystemInfo.NativeArchitecture(), () => DateTimeOffset.UtcNow)
-                .Install(new InstallerFile(downloaded.InstallerPath, downloaded.SignaturePath, downloaded.InstallerFileName), plan.Install, plan.Variant!.Value);
+            // 6. Install: hand over to the SYSTEM task, or (development mode) run the installer from here.
+            InstallOutcome outcome = tasks is not null
+                ? await ApplyHandoff.InstallAsync(context, tasks, downloaded, cancellationToken).ConfigureAwait(false)
+                : new InstallerRunner(
+                        PgpVerifier.CreateOfficial(), new SystemInstallEnvironment(), context.Log, ProcessTools.FindQbittorrent,
+                        new InstallerProcess(), SystemInfo.NativeArchitecture(), () => DateTimeOffset.UtcNow)
+                    .Install(new InstallerFile(downloaded.InstallerPath, downloaded.SignaturePath, downloaded.InstallerFileName), plan.Install, plan.Variant!.Value);
             context.Say(outcome.Message);
 
             // 7. Start again what was running, whatever the outcome.
@@ -136,8 +140,10 @@ internal static class UpdateFlow
         }
 
         context.Say(developmentMode
-            ? $"[dry-run] Would run {downloaded.InstallerFileName} /S /D={plan.Install.InstallDir} (development mode: elevated)."
-            : $"[dry-run] Would hand {downloaded.InstallerFileName} to the SYSTEM task and install it into {plan.Install.InstallDir}.");
+            ? $"[dry-run] Would run {downloaded.InstallerFileName} /S /D={plan.Install.InstallDir} (development mode: elevated, no Apply task)."
+            : ApplyHandoff.TryConnect(context.Log) is not null
+                ? $"[dry-run] Would hand {downloaded.InstallerFileName} to the SYSTEM task and install it into {plan.Install.InstallDir}."
+                : "[dry-run] QbtAutoUpdate is not set up on this PC, so nothing could be installed yet.");
     }
 
     private static void BackUp(FlowContext context, UpdatePlan plan, MachineConfig config, List<RunningQbt> closed)

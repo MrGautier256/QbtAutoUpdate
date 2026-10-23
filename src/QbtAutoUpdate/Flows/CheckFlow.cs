@@ -10,7 +10,7 @@ internal static class CheckFlow
     public static async Task<int> RunAsync(FlowContext context, CancellationToken cancellationToken)
     {
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
-        InstallInfo install = context.DetectInstall();
+        InstallInfo install = context.DetectInstall(state);
         UpdatePlan plan = await context.CreatePlanner(user)
             .PlanAsync(install, config, user, state, new PlanOptions(Manual: false), cancellationToken)
             .ConfigureAwait(false);

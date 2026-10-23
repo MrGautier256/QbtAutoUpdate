@@ -76,6 +76,13 @@ internal static partial class NativeMethods
     [LibraryImport("kernel32.dll")]
     internal static partial nint LocalFree(nint memory);
 
+    internal const uint MOVEFILE_REPLACE_EXISTING = 0x1;
+    internal const uint MOVEFILE_DELAY_UNTIL_REBOOT = 0x4;
+
+    [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool MoveFileEx(string existingFileName, string? newFileName, uint flags);
+
     [LibraryImport("ntdll.dll")]
     internal static unsafe partial int NtQueryInformationProcess(SafeProcessHandle process, int informationClass, void* information, uint length, out uint returnLength);
 

@@ -355,8 +355,20 @@ existing top-level HWND should receive the Restart Manager broadcast.
 ✅ **Confirmed on a real qBittorrent 5.2.4** (TESTING.md, 2026-10-22). With the main window hidden in the
 tray, the process has a top-level but invisible `Qt6103QWindowIcon` window. Restart Manager closed it in about
 1 s, and qBittorrent's log shows its full clean exit: shutdown initiated, resume data saved, session
-terminated, ready to exit. 🔬 Still to see in Sandbox: *start minimized* (window never shown), *confirm on
-exit* with active torrents, and a long shutdown with many torrents.
+terminated, ready to exit.
+
+✅ **Confirmed in Windows Sandbox on 5.2.3** (2026-10-23) in the hardest configuration:
+- *start minimized* (`GUI/StartUpWindowState=Minimized`, window never shown);
+- *minimize and close to tray*;
+- ***confirm on exit*** with an **active torrent**.
+
+Restart Manager closed it cleanly in 2 s without any confirmation dialog: the `commitDataRequest` path skips
+`closeEvent`. The updated 5.3.0 then logged "torrent restored". 🔬 Still to see: a long shutdown with
+many torrents.
+
+➕ **qBittorrent survives the end of the scheduled task that restarted it.** The Check task's process starts
+it and exits, and qBittorrent is still running 50 s later. Task Scheduler does not end the task's child
+processes when the action completes normally.
 
 ### 7.3 Restart Manager
 
@@ -459,6 +471,22 @@ tool will not edit it.
 
 ---
 
+## 8b. Platform behaviours learned while building (phase 3)
+
+- ➕ **Source-generated COM maps HRESULTs to .NET exception types**: `0x80070002` becomes `FileNotFoundException`,
+  `E_ACCESSDENIED` becomes `UnauthorizedAccessException`; only the rest stay `COMException`. Catching
+  `COMException` for "task folder not found" missed it, and setup crashed in the sandbox on a machine where
+  `\QbtAutoUpdate` did not exist yet. Errors are now matched by `HResult`, with a regression test.
+- ➕ **Windows Sandbox runs with UAC disabled** (`EnableLUA=0`) under the administrator `WDAGUtilityAccount`,
+  and **copies the host's display language** (qBittorrent logged in French). The scenario reads logs as
+  UTF-8 and matches English or French.
+- ➕ `net user <name> <password> /add` asks an interactive question when the password is longer than 14
+  characters.
+- ➕ Only one Windows Sandbox can run at a time, and that includes one that is still shutting down. The
+  launcher waits for the `WindowsSandbox*` processes to disappear.
+- ➕ With UAC off, an "elevated" process is the normal state, so the restart goes through the shell-token path
+  (`CreateProcessWithTokenW`). It worked: qBittorrent restarted in the user's session.
+
 ## 9. Open items to validate empirically
 
 Done in phase 1: the offline variant heuristic was confirmed by the `Integration` tests. Both real 5.3.0
@@ -466,14 +494,15 @@ installers were downloaded, verified with the pinned key, and unpacked; the righ
 `qbittorrent.exe`. On the development machine, `status` and `update --dry-run` reported 5.2.4,
 libtorrent 1.2, target `qbittorrent_5.3.0_lt12_x64_setup.exe`, signature valid.
 
-| Phase | Item |
-|-------|------|
-| 2 | Restart Manager closes qBittorrent with *minimize/close to tray*, *start minimized* and *confirm on exit* enabled, and with the window visible, minimized and hidden (§7.2 and §7.3). |
-| 2 | Resume data actually written: no full recheck after restart. |
-| 2 | Behaviour when qBittorrent runs elevated: `OpenProcess` access denied, Restart Manager failure. |
-| 3 | A task with a `BUILTIN\Users` group principal and interactive token runs once per logged-on user. |
-| 3 | `apply` task security descriptor that lets non-admins call `IRegisteredTask.Run`. |
-| 3 | Installer under SYSTEM: no UI, Public desktop shortcut removed then recreated, HKCU `Run` intact. |
-| 3 | Behaviour of an `/S` install when a file is locked (must never happen, but the post-check must catch it). |
-| 4 | Toast library under .NET 10, single-file and trimming; activation after the process has exited. |
-| 5 | Current behaviour of winget, Winget-AutoUpdate and UniGetUI for qBittorrent (README FAQ). |
+| Phase | Item | Status |
+|-------|------|--------|
+| 2 | Restart Manager closes qBittorrent with *minimize/close to tray*, *start minimized* and *confirm on exit* enabled, window visible, hidden or never shown (§7.2 and §7.3). | ✅ host 5.2.4 and Sandbox 5.2.3, active torrent included |
+| 2 | Resume data actually written: no full recheck after restart. | ✅ "resume data saved" then "torrent restored" in qBittorrent's log; a long shutdown with many torrents is still open |
+| 2 | Behaviour when qBittorrent runs elevated: `OpenProcess` access denied, Restart Manager failure. | 🔬 unit-tested (the update is blocked before anything is touched); needs a PC with UAC on |
+| 3 | A task with a `BUILTIN\Users` group principal and interactive token runs for the logged-on user. | ✅ Sandbox: ran in the user's session (several users signed in at once: not tested) |
+| 3 | `apply` task security descriptor that lets non-admins call `IRegisteredTask.Run`. | ✅ Sandbox: a standard account started it with `schtasks /run` |
+| 3 | Installer under SYSTEM: no UI, Public desktop shortcut removed then recreated, HKCU `Run` intact. | ✅ Sandbox |
+| 3 | Behaviour of an `/S` install when a file is locked (must never happen, but the post-check must catch it). | 🔬 not reproduced; the post-install version check would report it |
+| 4 | Toast library under .NET 10, single-file and trimming; activation after the process has exited. | open |
+| 5 | Current behaviour of winget, Winget-AutoUpdate and UniGetUI for qBittorrent (README FAQ). | open |
+| 5 | No UAC prompt after setup, no window flashing, on a PC with UAC on (Sandbox has UAC off). | open |

@@ -32,6 +32,8 @@ public sealed record InstallInfo
     /// <summary>A "profile" folder next to the exe: qBittorrent then runs in portable mode.</summary>
     public bool HasPortableProfile { get; init; }
     public IReadOnlyList<string> Notes { get; init; } = [];
+    /// <summary>Variant of an install that was interrupted (no binary left to scan), from state.json.</summary>
+    public Variant? RecoveredVariant { get; init; }
 
     public bool IsSupported => Kind == InstallKind.Installed;
 
@@ -41,7 +43,7 @@ public sealed record InstallInfo
     /// <summary>Registry and binary disagree, or the binary is gone: reinstalling the same version is allowed.</summary>
     public bool IsInconsistent => ExeMissing || (FileVersion is not null && RegistryVersion is not null && FileVersion != RegistryVersion);
 
-    public Variant? DetectedVariant => Scan?.Variant;
+    public Variant? DetectedVariant => Scan?.Variant ?? RecoveredVariant;
 }
 
 /// <summary>

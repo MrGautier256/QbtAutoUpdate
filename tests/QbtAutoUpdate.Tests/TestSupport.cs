@@ -134,6 +134,26 @@ internal sealed class FakeEnvironment : IInstallEnvironment
     }
 }
 
+/// <summary>Plays the official installer: exit code, then the registry and binary it leaves behind.</summary>
+internal sealed class FakeInstaller(FakeEnvironment environment) : IInstallerProcess
+{
+    public int? ExitCode { get; set; } = 0;
+    public string InstalledVersion { get; set; } = "5.3.0";
+    public BinaryScanResult InstalledScan { get; set; } = FakeEnvironment.Lt12;
+    public List<string> Calls { get; } = [];
+    /// <summary>Extra side effect of the run, e.g. the uninstaller deleting the Public desktop shortcut.</summary>
+    public Action? OnRun { get; set; }
+
+    public int? Run(string path, string arguments, TimeSpan timeout)
+    {
+        Calls.Add(arguments);
+        OnRun?.Invoke();
+        if (ExitCode == 0)
+            environment.SimulateInstall(InstalledVersion, InstalledScan);
+        return ExitCode;
+    }
+}
+
 /// <summary>An RSA OpenPGP key generated for the tests, able to sign like qBittorrent's release key.</summary>
 internal sealed class TestKey
 {

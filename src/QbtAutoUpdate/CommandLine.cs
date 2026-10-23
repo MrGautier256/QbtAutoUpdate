@@ -9,7 +9,7 @@ internal sealed record CommandLine(
     IReadOnlyDictionary<string, string?> Options,
     string? Error)
 {
-    public static readonly IReadOnlyList<string> Verbs = ["setup", "uninstall", "check", "update", "apply", "status", "rollback", "restart", "webui", "help"];
+    public static readonly IReadOnlyList<string> Verbs = ["setup", "uninstall", "config", "check", "update", "apply", "status", "rollback", "restart", "webui", "help"];
 
     private static readonly string[] GlobalFlags = ["--dry-run", "--verbose"];
 
@@ -18,6 +18,7 @@ internal sealed record CommandLine(
     {
         ["setup"] = new() { ["--mode"] = true, ["--interval"] = true, ["--variant"] = true, ["--quiet"] = false },
         ["uninstall"] = new() { ["--keep-logs"] = false, ["--quiet"] = false },
+        ["config"] = new() { ["--enabled"] = true, ["--mode"] = true, ["--interval"] = true, ["--variant"] = true },
         ["webui"] = new()
         {
             ["--url"] = true, ["--api-key"] = true, ["--username"] = true, ["--password"] = true,
@@ -28,6 +29,29 @@ internal sealed record CommandLine(
     public string? Get(string option) => Options.TryGetValue(option, out string? value) ? value : null;
 
     public bool Has(string option) => Options.ContainsKey(option);
+
+    /// <summary>The arguments that reproduce this command line, e.g. to run it again elevated.</summary>
+    public List<string> ToArguments()
+    {
+        var arguments = new List<string> { Verb ?? "help" };
+        foreach ((string name, string? value) in Options)
+        {
+            arguments.Add(name);
+            if (value is not null)
+                arguments.Add(value);
+        }
+        if (DryRun)
+            arguments.Add("--dry-run");
+        if (Verbose)
+            arguments.Add("--verbose");
+        return arguments;
+    }
+
+    public CommandLine With(string option, string? value = null)
+    {
+        var options = new Dictionary<string, string?>(Options, StringComparer.Ordinal) { [option] = value };
+        return this with { Options = options };
+    }
 
     public static CommandLine Parse(IReadOnlyList<string> args)
     {
@@ -112,9 +136,13 @@ internal sealed record CommandLine(
           status      Installed version, variant, latest release, settings, log locations.
           check       Look for an update; then install it (auto mode) or offer it (notify mode).
           update      Download, verify and install the latest release now.
-          setup       Install QbtAutoUpdate for this PC (administrator).
+          setup       Install QbtAutoUpdate for this PC (administrator). Without --quiet, opens the setup window.
                         --mode auto|notify  --interval <hours>  --variant auto|lt2|lt12  --quiet
           uninstall   Remove QbtAutoUpdate (administrator).  --keep-logs  --quiet
+          config      Change settings (administrator); without options, show them.
+                        --enabled on|off  --mode auto|notify  --interval <hours>  --variant auto|lt2|lt12
+
+        Without a command (double-click), opens the setup window, or the settings window once installed.
           rollback    Reinstall the previous qBittorrent release (administrator).
           restart     Close qBittorrent the way an update does and start it again (diagnostic).
           webui       Optional access to qBittorrent's WebUI, for this Windows user.

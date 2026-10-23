@@ -12,7 +12,7 @@ internal static class StatusFlow
     {
         TextWriter o = context.Output;
         (MachineConfig config, UserSettings user, UpdateState state) = context.LoadSettings();
-        InstallInfo install = context.DetectInstall();
+        InstallInfo install = context.DetectInstall(state);
 
         o.WriteLine($"QbtAutoUpdate {SafeHttpClient.ProductVersion}");
         o.WriteLine();
@@ -131,7 +131,20 @@ internal static class StatusFlow
     {
         AppPaths paths = context.Paths;
         bool installed = File.Exists(paths.InstalledExe);
-        Row(o, "Setup", installed ? $"installed ({paths.InstalledExe})" : "not installed (run setup)");
+        Row(o, "Setup", installed ? $"installed ({paths.InstalledExe})" : "not installed (double-click QbtAutoUpdate.exe or run setup)");
+        if (installed)
+        {
+            try
+            {
+                ScheduledTasks tasks = ScheduledTasks.Connect();
+                Row(o, "Check task", DescribeTask(tasks.GetInfo(ScheduledTasks.CheckTask)));
+                Row(o, "Apply task", DescribeTask(tasks.GetInfo(ScheduledTasks.ApplyTask)));
+            }
+            catch (Exception ex) when (ScheduledTasks.IsFailure(ex))
+            {
+                Row(o, "Tasks", "unreadable: " + ex.Message);
+            }
+        }
 
         string configSource = File.Exists(paths.ConfigFile) ? paths.ConfigFile : "defaults, no config.json";
         Row(o, "Settings", configSource);
@@ -149,9 +162,18 @@ internal static class StatusFlow
         Row(o, "Last install", state.LastInstall is { } last
             ? $"{last.Version} {last.Variant?.Describe()} on {last.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}: {last.Result}{(last.Message is null ? "" : " - " + last.Message)}"
             : "none");
+        if (state.LastAttempt is { } attempt)
+            Row(o, "Last attempt", $"{attempt.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}: {attempt.Result} - {attempt.Message}");
+        if (state.BusySince is { } busy)
+            Row(o, "Waiting since", $"{busy.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} (qBittorrent was running)");
         Row(o, "Logs", paths.UserLogsDir);
         Row(o, "", paths.MachineLogsDir);
     }
+
+    private static string DescribeTask(ScheduledTaskInfo? task) => task is null
+        ? "missing (run setup again)"
+        : $"{(task.Enabled ? "enabled" : "disabled")}{(task.Running ? ", running" : "")}"
+          + (task.LastRun is { } run ? $", last run {run.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} (result 0x{task.LastResult:X})" : ", never run");
 
     private static void Row(TextWriter o, string label, string value) => o.WriteLine($"  {label,-14} {value}");
 }

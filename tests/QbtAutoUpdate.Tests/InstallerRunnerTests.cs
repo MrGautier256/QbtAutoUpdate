@@ -20,23 +20,6 @@ public sealed class InstallerRunnerTests : IClassFixture<PgpKeys>, IDisposable
         _installer = new FakeInstaller(_environment);
     }
 
-    /// <summary>Plays the official installer: exit code, then the registry and binary it leaves behind.</summary>
-    private sealed class FakeInstaller(FakeEnvironment environment) : IInstallerProcess
-    {
-        public int? ExitCode { get; set; } = 0;
-        public string InstalledVersion { get; set; } = "5.3.0";
-        public BinaryScanResult InstalledScan { get; set; } = FakeEnvironment.Lt12;
-        public List<string> Calls { get; } = [];
-
-        public int? Run(string path, string arguments, TimeSpan timeout)
-        {
-            Calls.Add(arguments);
-            if (ExitCode == 0)
-                environment.SimulateInstall(InstalledVersion, InstalledScan);
-            return ExitCode;
-        }
-    }
-
     private InstallerFile Signed(string name, string fileVersion = "5.3.0", TestKey? signer = null)
     {
         string path = Path.Combine(_dir, name);

@@ -10,7 +10,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         CommandLine command = CommandLine.Parse(args);
-        ConsoleHost.AttachToParent();
+        bool hasConsole = ConsoleHost.AttachToParent();
 
         if (command.Error is not null)
         {
@@ -20,8 +20,7 @@ internal static class Program
             return ExitCodes.Usage;
         }
 
-        // Double-click without arguments opens the setup or settings dialog from phase 3 on.
-        if (command.Verb is null || command.Help)
+        if (command.Help || (command.Verb is null && hasConsole))
         {
             Console.WriteLine(CommandLine.Usage);
             return ExitCodes.Ok;
@@ -35,16 +34,23 @@ internal static class Program
         };
 
         using FlowContext context = FlowContext.Create(command);
-        context.Log.Info($"QbtAutoUpdate {SafeHttpClient.ProductVersion} '{command.Verb}'{(command.DryRun ? " --dry-run" : "")} as {Environment.UserName}{(Environment.IsPrivilegedProcess ? " (elevated)" : "")}");
+        context.Log.Info($"QbtAutoUpdate {SafeHttpClient.ProductVersion} '{command.Verb ?? "(window)"}'{(command.DryRun ? " --dry-run" : "")} as {Environment.UserName}"
+                         + (Elevation.IsSystem ? " (SYSTEM)" : Elevation.IsElevated ? " (elevated)" : ""));
         try
         {
             Task<int> run = command.Verb switch
             {
+                // Double-click (no console): setup window, or settings window once installed.
+                null => Task.FromResult(UiFlow.Run(context)),
                 "status" => StatusFlow.RunAsync(context, cancellation.Token),
                 "check" => CheckFlow.RunAsync(context, cancellation.Token),
                 "update" => UpdateFlow.RunAsync(context, cancellation.Token),
                 "restart" => RestartFlow.RunAsync(context, cancellation.Token),
                 "webui" => WebUiFlow.RunAsync(context, cancellation.Token),
+                "setup" => Task.FromResult(SetupFlow.Run(context)),
+                "config" => Task.FromResult(ConfigFlow.Run(context)),
+                "uninstall" => Task.FromResult(UninstallFlow.Run(context)),
+                "apply" => Task.FromResult(ApplyFlow.Run(context)),
                 _ => Task.FromResult(NotAvailableYet(context, command.Verb)),
             };
             int exitCode = run.GetAwaiter().GetResult();
